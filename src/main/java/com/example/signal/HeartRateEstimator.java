@@ -2,27 +2,64 @@ package com.example.signal;
 
 public class HeartRateEstimator {
 
+    private static final double FLAT_SIGNAL_ENERGY_EPS = 1e-9;
+    private static final double MIN_PEAK_POWER_EPS = 1e-12;
+
     private final double fsHz;
     private final double minHz;
     private final double maxHz;
 
     public HeartRateEstimator(double fsHz, double minHz, double maxHz) {
+        if (!Double.isFinite(fsHz) || fsHz <= 0.0) {
+            throw new IllegalArgumentException("fsHz must be > 0");
+        }
+        if (!Double.isFinite(minHz) || !Double.isFinite(maxHz) || minHz <= 0.0 || maxHz <= minHz) {
+            throw new IllegalArgumentException("invalid HR band");
+        }
         this.fsHz = fsHz;
         this.minHz = minHz;
         this.maxHz = maxHz;
     }
 
     public Result estimate(double[] rawSignal) {
+        if (rawSignal == null || rawSignal.length < 3) {
+            return Result.invalid("Signal is too short");
+        }
+        for (double sample : rawSignal) {
+            if (!Double.isFinite(sample)) {
+                return Result.invalid("Signal contains non-finite values");
+            }
+        }
+
         double[] x = Preprocessor.detrendAndNormalize(rawSignal);
+        double signalEnergy = 0.0;
+        for (double v : x) {
+            signalEnergy += v * v;
+        }
+        if (signalEnergy < FLAT_SIGNAL_ENERGY_EPS) {
+            return Result.invalid("Signal is flat");
+        }
         Preprocessor.applyHannWindowInPlace(x);
 
         double[] p = FftPowerSpectrum.powerSpectrum(x);
         int n = rawSignal.length;
         int k = PeakPicker.argMaxInBand(p, fsHz, minHz, maxHz);
-        if (k < 0) return Result.invalid("No peak in band");
+        if (k < 0) {
+            return Result.invalid("No peak in band");
+        }
+        double peakPower = p[k];
+        if (!Double.isFinite(peakPower) || peakPower <= MIN_PEAK_POWER_EPS) {
+            return Result.invalid("Peak power too low");
+        }
 
         double hz = PeakPicker.binToHz(k, n, fsHz);
+        if (!Double.isFinite(hz) || hz < minHz || hz > maxHz) {
+            return Result.invalid("Peak frequency out of band");
+        }
         double bpm = hz * 60.0;
+        if (!Double.isFinite(bpm)) {
+            return Result.invalid("BPM is invalid");
+        }
         return Result.valid(bpm, hz, k);
     }
 

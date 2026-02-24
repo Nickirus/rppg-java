@@ -33,6 +33,9 @@ import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 final class RunModeProcessor {
     private static final int DETECT_EVERY_N_FRAMES = 3;
     private static final int MIN_FRAMES_FOR_FPS_ESTIMATE = 15;
+    private static final long BPM_UPDATE_INTERVAL_NS = 2_000_000_000L;
+    private static final long POST_FULL_MONITOR_NS = 6_000_000_000L;
+    private static final long MAX_RUN_DURATION_NS = 120_000_000_000L;
     private static final Path CASCADE_PATH =
             Paths.get("src", "main", "resources", "cascades", "haarcascade_frontalface_default.xml");
 
@@ -82,8 +85,16 @@ final class RunModeProcessor {
             int signalWindowCapacity = -1;
             HeartRateEstimator estimator = null;
             List<Double> warmupSamples = new ArrayList<>();
+            long lastBpmUpdateNs = Long.MIN_VALUE;
+            long firstFullWindowNs = Long.MIN_VALUE;
 
             while (previewWindow.isVisible()) {
+                long loopNowNs = System.nanoTime();
+                if (loopNowNs - startedNs >= MAX_RUN_DURATION_NS) {
+                    System.err.println("Run mode timed out before completion.");
+                    return false;
+                }
+
                 Frame frame = grabber.grab();
                 if (frame == null || frame.image == null) {
                     continue;
@@ -150,18 +161,29 @@ final class RunModeProcessor {
                             );
 
                             if (signalWindow.isFull()) {
-                                HeartRateEstimator.Result result = estimator.estimate(signalWindow.toArray());
-                                if (result.valid()) {
-                                    System.out.printf(
-                                            Locale.US,
-                                            "Window full: estimated BPM=%.1f (%.3f Hz)%n",
-                                            result.bpm(),
-                                            result.hz()
-                                    );
-                                } else {
-                                    System.out.println("Window full: BPM estimate invalid: " + result.reason());
+                                long estimateNowNs = System.nanoTime();
+                                if (firstFullWindowNs == Long.MIN_VALUE) {
+                                    firstFullWindowNs = estimateNowNs;
                                 }
-                                return true;
+                                if (lastBpmUpdateNs == Long.MIN_VALUE
+                                        || estimateNowNs - lastBpmUpdateNs >= BPM_UPDATE_INTERVAL_NS) {
+                                    HeartRateEstimator.Result result = estimator.estimate(signalWindow.toArray());
+                                    if (result.valid()) {
+                                        System.out.printf(
+                                                Locale.US,
+                                                "BPM update: %.1f bpm (%.3f Hz)%n",
+                                                result.bpm(),
+                                                result.hz()
+                                        );
+                                    } else {
+                                        System.out.println("BPM update: invalid: " + result.reason());
+                                    }
+                                    lastBpmUpdateNs = estimateNowNs;
+                                }
+                                if (estimateNowNs - firstFullWindowNs >= POST_FULL_MONITOR_NS) {
+                                    System.out.println("Run mode completed after post-full BPM updates.");
+                                    return true;
+                                }
                             }
                         }
                     }

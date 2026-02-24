@@ -27,7 +27,8 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `windowFill=...%`
 - Builds a fixed-length `SignalWindow` from measured FPS:
   - `windowSamples = round(windowSeconds * measuredFps)` (default `windowSeconds=30`)
-- When the window is full, calls `HeartRateEstimator` and prints BPM result.
+- When the window is full, calls `HeartRateEstimator` and prints `BPM update` about every 2 seconds.
+- If the signal is flat/invalid, prints `BPM update: invalid: ...` without crashing.
 
 ## Haar Cascade File
 - Required file path:
