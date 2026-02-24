@@ -7,7 +7,9 @@ public record Config(
         double targetFps,
         int windowSeconds,
         double hrMinHz,
-        double hrMaxHz
+        double hrMaxHz,
+        String csvPath,
+        double qualityThreshold
 ) {
     public static Config defaults() {
         return new Config(
@@ -15,9 +17,25 @@ public record Config(
                 640,
                 480,
                 30.0,
-                30,      // 20–45s, возьмём 30s как базу
-                0.8,     // 48 bpm
-                2.5      // 150 bpm
+                30,
+                0.8,
+                2.5,
+                "./logs/rppg.csv",
+                0.20
+        );
+    }
+
+    public Config withCsvPath(String value) {
+        return new Config(
+                cameraIndex,
+                targetWidth,
+                targetHeight,
+                targetFps,
+                windowSeconds,
+                hrMinHz,
+                hrMaxHz,
+                value,
+                qualityThreshold
         );
     }
 }

@@ -3,6 +3,7 @@ package com.example.rppg.app;
 import com.example.rppg.vision.FaceTracker;
 import com.example.rppg.vision.RoiSelector;
 import com.example.signal.HeartRateEstimator;
+import com.example.signal.SignalQualityScorer;
 import com.example.signal.SignalWindow;
 import org.bytedeco.javacv.CanvasFrame;
 import org.bytedeco.javacv.Frame;
@@ -19,6 +20,7 @@ import javax.swing.JFrame;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -73,10 +75,13 @@ final class RunModeProcessor {
         }
 
         CanvasFrame previewWindow = null;
+        CsvSignalLogger csvLogger = null;
         OpenCVFrameConverter.ToMat converter = new OpenCVFrameConverter.ToMat();
         try {
             previewWindow = new CanvasFrame("rppg-java run mode");
             previewWindow.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+            csvLogger = CsvSignalLogger.open(config.csvPath());
+            System.out.println("CSV logging enabled: " + config.csvPath());
 
             long startedNs = System.nanoTime();
             int capturedFrames = 0;
@@ -87,6 +92,8 @@ final class RunModeProcessor {
             List<Double> warmupSamples = new ArrayList<>();
             long lastBpmUpdateNs = Long.MIN_VALUE;
             long firstFullWindowNs = Long.MIN_VALUE;
+            Double latestBpmForLog = null;
+            double latestQualityForLog = 0.0;
 
             while (previewWindow.isVisible()) {
                 long loopNowNs = System.nanoTime();
@@ -150,6 +157,7 @@ final class RunModeProcessor {
                                     avgG,
                                     warmupSamples.size()
                             );
+                            csvLogger.log(Instant.now(), avgG, null, 0.0);
                         } else {
                             signalWindow.add(avgG);
                             double fillPercent = (signalWindow.size() * 100.0) / signalWindowCapacity;
@@ -167,23 +175,46 @@ final class RunModeProcessor {
                                 }
                                 if (lastBpmUpdateNs == Long.MIN_VALUE
                                         || estimateNowNs - lastBpmUpdateNs >= BPM_UPDATE_INTERVAL_NS) {
-                                    HeartRateEstimator.Result result = estimator.estimate(signalWindow.toArray());
-                                    if (result.valid()) {
+                                    double[] windowSignal = signalWindow.toArray();
+                                    HeartRateEstimator.Result result = estimator.estimate(windowSignal);
+                                    double quality = SignalQualityScorer.peakDominance(
+                                            windowSignal,
+                                            measuredFps,
+                                            config.hrMinHz(),
+                                            config.hrMaxHz()
+                                    );
+                                    latestQualityForLog = quality;
+                                    if (result.valid() && quality >= config.qualityThreshold()) {
+                                        latestBpmForLog = result.bpm();
                                         System.out.printf(
                                                 Locale.US,
-                                                "BPM update: %.1f bpm (%.3f Hz)%n",
+                                                "BPM update: %.1f bpm (%.3f Hz), quality=%.3f%n",
                                                 result.bpm(),
-                                                result.hz()
+                                                result.hz(),
+                                                quality
+                                        );
+                                    } else if (result.valid()) {
+                                        latestBpmForLog = null;
+                                        System.out.printf(
+                                                Locale.US,
+                                                "BPM update: low-confidence (quality=%.3f < %.3f), marked invalid%n",
+                                                quality,
+                                                config.qualityThreshold()
                                         );
                                     } else {
+                                        latestBpmForLog = null;
                                         System.out.println("BPM update: invalid: " + result.reason());
                                     }
                                     lastBpmUpdateNs = estimateNowNs;
                                 }
+
+                                csvLogger.log(Instant.now(), avgG, latestBpmForLog, latestQualityForLog);
                                 if (estimateNowNs - firstFullWindowNs >= POST_FULL_MONITOR_NS) {
                                     System.out.println("Run mode completed after post-full BPM updates.");
                                     return true;
                                 }
+                            } else {
+                                csvLogger.log(Instant.now(), avgG, null, 0.0);
                             }
                         }
                     }
@@ -198,6 +229,10 @@ final class RunModeProcessor {
             System.err.println("Run mode failed: no display is available for preview window.");
             System.err.println("Details: " + e.getMessage());
             return false;
+        } catch (java.io.IOException e) {
+            System.err.println("Run mode failed: cannot write CSV log file.");
+            System.err.println("Details: " + e.getMessage());
+            return false;
         } catch (Exception e) {
             System.err.println("Run mode failed during capture.");
             System.err.println("Details: " + e.getMessage());
@@ -205,6 +240,13 @@ final class RunModeProcessor {
         } finally {
             if (previewWindow != null) {
                 previewWindow.dispose();
+            }
+            if (csvLogger != null) {
+                try {
+                    csvLogger.close();
+                } catch (java.io.IOException ignored) {
+                    // best-effort cleanup
+                }
             }
             classifier.close();
             try {

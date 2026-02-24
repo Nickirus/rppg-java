@@ -21,6 +21,8 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 
 ## Run mode (manual)
 - `./gradlew run --args="--run"`
+- Optional CSV path override:
+  - `./gradlew run --args="--run --csv=./logs/custom.csv"`
 - Uses face detection and forehead ROI each frame.
 - Computes average green channel (`avgG`) from ROI and prints:
   - `avgG=...`
@@ -29,6 +31,12 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `windowSamples = round(windowSeconds * measuredFps)` (default `windowSeconds=30`)
 - When the window is full, calls `HeartRateEstimator` and prints `BPM update` about every 2 seconds.
 - If the signal is flat/invalid, prints `BPM update: invalid: ...` without crashing.
+- Computes a simple quality score (`0..1`) from spectral peak dominance.
+- If quality is below threshold (default `0.20`), BPM is marked low-confidence/invalid.
+- CSV logging in run mode:
+  - default path: `./logs/rppg.csv` (directory auto-created)
+  - columns: `timestamp,avgG,bpm,quality`
+  - no raw frames/video are written.
 
 ## Haar Cascade File
 - Required file path:

@@ -13,7 +13,12 @@ public final class RppgJavaApplication {
             return;
         }
         if (hasArg(args, "--run")) {
-            boolean ok = RunModeProcessor.run(Config.defaults());
+            Config config = Config.defaults();
+            String csvPath = argValue(args, "--csv=");
+            if (csvPath != null && !csvPath.isBlank()) {
+                config = config.withCsvPath(csvPath.trim());
+            }
+            boolean ok = RunModeProcessor.run(config);
             if (!ok) {
                 System.exit(1);
             }
@@ -29,5 +34,14 @@ public final class RppgJavaApplication {
             }
         }
         return false;
+    }
+
+    private static String argValue(String[] args, String prefix) {
+        for (String arg : args) {
+            if (arg != null && arg.startsWith(prefix) && arg.length() > prefix.length()) {
+                return arg.substring(prefix.length());
+            }
+        }
+        return null;
     }
 }
