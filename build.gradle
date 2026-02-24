@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.example'
+version = '0.1.0-SNAPSHOT'
+description = 'rppg-java'
+
+def requestedJava = 25
+def currentJava = JavaVersion.current().majorVersion.toInteger()
+def effectiveJava = Math.min(requestedJava, currentJava)
+
+java {
+    sourceCompatibility = JavaVersion.toVersion(effectiveJava)
+    targetCompatibility = JavaVersion.toVersion(effectiveJava)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = effectiveJava
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
