@@ -10,6 +10,32 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 ## Run tests
 - `./gradlew test`
 
+## Camera smoke-test (manual)
+- `./gradlew run --args="--camera-check"`
+- Opens a live preview for about 5 seconds using the default camera.
+- Prints measured FPS and frame size (`WxH`).
+- Draws overlays when a face is detected:
+  - green rectangle: detected face
+  - cyan rectangle: forehead ROI
+- If the camera is unavailable, exits gracefully with a clear error message.
+
+## Run mode (manual)
+- `./gradlew run --args="--run"`
+- Uses face detection and forehead ROI each frame.
+- Computes average green channel (`avgG`) from ROI and prints:
+  - `avgG=...`
+  - `windowFill=...%`
+- Builds a fixed-length `SignalWindow` from measured FPS:
+  - `windowSamples = round(windowSeconds * measuredFps)` (default `windowSeconds=30`)
+- When the window is full, calls `HeartRateEstimator` and prints BPM result.
+
+## Haar Cascade File
+- Required file path:
+  - `src/main/resources/cascades/haarcascade_frontalface_default.xml`
+- The project does not download this file automatically.
+- If missing, `--camera-check` fails with a clear message and expected path.
+- Place a valid OpenCV Haar cascade XML at that path (for example, from a local OpenCV installation).
+
 ## Notes
 - No camera access is required for tests.
 - Signal-processing tests use synthetic sine signals.
