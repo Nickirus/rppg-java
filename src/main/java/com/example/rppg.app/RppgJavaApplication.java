@@ -24,6 +24,13 @@ public final class RppgJavaApplication {
             }
             return;
         }
+        if (hasArg(args, "--web")) {
+            boolean ok = WebUiMode.run();
+            if (!ok) {
+                System.exit(1);
+            }
+            return;
+        }
         System.out.println("rppg-java MVP skeleton");
     }
 

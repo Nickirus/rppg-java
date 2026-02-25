@@ -38,6 +38,15 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - columns: `timestamp,avgG,bpm,quality`
   - no raw frames/video are written.
 
+## Web UI mode (manual)
+- `./gradlew run --args="--web"`
+- Starts Spring Boot server on `http://localhost:8080`.
+- `GET /` serves a single-page dashboard with:
+  - BPM, quality, FPS, windowFill, warnings
+  - Start / Stop / Reset buttons
+- `GET /api/sse` streams JSON snapshots using Server-Sent Events.
+- `POST /api/control/start|stop|reset` updates in-memory UI state and returns 200.
+
 ## Haar Cascade File
 - Required file path:
   - `src/main/resources/cascades/haarcascade_frontalface_default.xml`
