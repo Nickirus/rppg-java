@@ -5,10 +5,12 @@ import com.example.rppg.vision.RoiSelector;
 import com.example.signal.HeartRateEstimator;
 import com.example.signal.SignalQualityScorer;
 import com.example.signal.SignalWindow;
+import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.OpenCVFrameConverter;
 import org.bytedeco.javacv.OpenCVFrameGrabber;
 import org.bytedeco.opencv.opencv_core.Mat;
+import org.bytedeco.opencv.opencv_core.Point;
 import org.bytedeco.opencv.opencv_core.Rect;
 import org.bytedeco.opencv.opencv_core.RectVector;
 import org.bytedeco.opencv.opencv_core.Scalar;
@@ -26,9 +28,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.bytedeco.opencv.global.opencv_core.mean;
+import static org.bytedeco.opencv.global.opencv_imgcodecs.imencode;
 import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGR2GRAY;
+import static org.bytedeco.opencv.global.opencv_imgproc.FONT_HERSHEY_SIMPLEX;
+import static org.bytedeco.opencv.global.opencv_imgproc.LINE_8;
+import static org.bytedeco.opencv.global.opencv_imgproc.LINE_AA;
 import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
 import static org.bytedeco.opencv.global.opencv_imgproc.equalizeHist;
+import static org.bytedeco.opencv.global.opencv_imgproc.putText;
+import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 
 public final class RppgEngine {
     private static final int DETECT_EVERY_N_FRAMES = 3;
@@ -39,6 +47,7 @@ public final class RppgEngine {
 
     private final Config config;
     private final AtomicReference<RppgSnapshot> latestSnapshot = new AtomicReference<>(RppgSnapshot.initial());
+    private final AtomicReference<byte[]> latestJpegFrame = new AtomicReference<>(null);
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
     private final Object lifecycleLock = new Object();
 
@@ -80,6 +89,7 @@ public final class RppgEngine {
                 workerThread = null;
             }
         }
+        latestJpegFrame.set(null);
     }
 
     public void reset() {
@@ -94,10 +104,19 @@ public final class RppgEngine {
                 0.0,
                 "reset"
         ));
+        latestJpegFrame.set(null);
     }
 
     public RppgSnapshot getLatestSnapshot() {
         return latestSnapshot.get();
+    }
+
+    public byte[] getLatestJpegFrame() {
+        byte[] frame = latestJpegFrame.get();
+        if (frame == null) {
+            return null;
+        }
+        return frame.clone();
     }
 
     private void runLoop() {
@@ -164,6 +183,7 @@ public final class RppgEngine {
 
                 if (lastFace == null) {
                     publish(true, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-face");
+                    renderAndStoreJpegFrame(bgr, null, null, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-face");
                     continue;
                 }
 
@@ -171,6 +191,7 @@ public final class RppgEngine {
                 Rect foreheadRect = new Rect(forehead.x(), forehead.y(), forehead.width(), forehead.height());
                 if (foreheadRect.width() <= 0 || foreheadRect.height() <= 0) {
                     publish(true, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-roi");
+                    renderAndStoreJpegFrame(bgr, lastFace, null, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-roi");
                     continue;
                 }
 
@@ -198,6 +219,7 @@ public final class RppgEngine {
                     warmupSamples.add(avgG);
                     csvLogger.log(Instant.now(), avgG, null, 0.0);
                     publish(true, avgG, 0.0, 0.0, measuredFps, 0.0, "warming-up");
+                    renderAndStoreJpegFrame(bgr, lastFace, foreheadRect, avgG, 0.0, 0.0, measuredFps, 0.0, "warming-up");
                     continue;
                 }
 
@@ -251,6 +273,17 @@ public final class RppgEngine {
                 }
 
                 publish(true, avgG, valueOrZero(latestBpm), latestQuality, measuredFps, fillPercent, latestWarning);
+                renderAndStoreJpegFrame(
+                        bgr,
+                        lastFace,
+                        foreheadRect,
+                        avgG,
+                        valueOrZero(latestBpm),
+                        latestQuality,
+                        measuredFps,
+                        fillPercent,
+                        latestWarning
+                );
             }
 
             publish(false, latestAvgG, valueOrZero(latestBpm), latestQuality, 0.0, 0.0, "stopped");
@@ -285,6 +318,7 @@ public final class RppgEngine {
                     workerThread = null;
                 }
             }
+            latestJpegFrame.set(null);
         }
     }
 
@@ -358,5 +392,52 @@ public final class RppgEngine {
         Mat roi = new Mat(bgrFrame, roiRect);
         Scalar channelMeans = mean(roi);
         return channelMeans.get(1);
+    }
+
+    private void renderAndStoreJpegFrame(
+            Mat bgrFrame,
+            Rect faceRect,
+            Rect roiRect,
+            double avgG,
+            double bpm,
+            double quality,
+            double fps,
+            double windowFill,
+            String warnings
+    ) {
+        Mat view = bgrFrame.clone();
+        try {
+            if (faceRect != null) {
+                rectangle(view, faceRect, new Scalar(0, 255, 0, 0), 2, LINE_8, 0);
+            }
+            if (roiRect != null) {
+                rectangle(view, roiRect, new Scalar(255, 255, 0, 0), 2, LINE_8, 0);
+            }
+
+            String line1 = String.format(Locale.US, "BPM: %.1f  Q: %.3f", bpm, quality);
+            String line2 = String.format(Locale.US, "FPS: %.1f  Fill: %.1f%%  avgG: %.1f", fps, windowFill, avgG);
+            String line3 = warnings == null || warnings.isBlank() ? "Warnings: none" : "Warnings: " + warnings;
+            putText(view, line1, new Point(12, 24), FONT_HERSHEY_SIMPLEX, 0.6, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
+            putText(view, line2, new Point(12, 48), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
+            putText(view, line3, new Point(12, 72), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 200, 255, 0), 2, LINE_AA, false);
+
+            BytePointer encoded = new BytePointer();
+            try {
+                if (imencode(".jpg", view, encoded)) {
+                    long sizeLong = encoded.limit() > 0 ? encoded.limit() : encoded.capacity();
+                    if (sizeLong > 0 && sizeLong <= Integer.MAX_VALUE) {
+                        int size = (int) sizeLong;
+                        byte[] bytes = new byte[size];
+                        encoded.position(0);
+                        encoded.get(bytes);
+                        latestJpegFrame.set(bytes);
+                    }
+                }
+            } finally {
+                encoded.close();
+            }
+        } finally {
+            view.close();
+        }
     }
 }

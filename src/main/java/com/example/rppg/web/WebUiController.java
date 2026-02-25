@@ -1,12 +1,17 @@
 package com.example.rppg.web;
 
 import com.example.rppg.app.RppgSnapshot;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 public class WebUiController {
@@ -36,11 +41,18 @@ public class WebUiController {
                     .buttons { display: flex; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap; }
                     button { border: 1px solid #425d8c; background: #4a67a1; color: white; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
                     button:hover { background: #3f5889; }
+                    .video-wrap { background: #fff; border: 1px solid #d6deeb; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
+                    #videoFeed { width: 100%; max-width: 860px; border-radius: 8px; border: 1px solid #c9d5e8; background: #111827; }
+                    #videoStatus { margin-top: 6px; color: #5f6e84; font-size: 13px; }
                     pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; min-height: 74px; overflow: auto; }
                   </style>
                 </head>
                 <body>
                   <h1>rppg-java Web UI</h1>
+                  <div class="video-wrap">
+                    <img id="videoFeed" src="/api/video.mjpg" alt="rPPG camera preview">
+                    <div id="videoStatus">Video stream: waiting for engine start...</div>
+                  </div>
                   <div class="grid">
                     <div class="card"><div class="label">BPM</div><div id="bpm" class="value">--</div></div>
                     <div class="card"><div class="label">Quality</div><div id="quality" class="value">--</div></div>
@@ -56,6 +68,20 @@ public class WebUiController {
                   <pre id="status">Connecting to SSE...</pre>
                   <script>
                     const statusEl = document.getElementById('status');
+                    const videoEl = document.getElementById('videoFeed');
+                    const videoStatusEl = document.getElementById('videoStatus');
+
+                    function reconnectVideo() {
+                      videoEl.src = '/api/video.mjpg?ts=' + Date.now();
+                    }
+
+                    videoEl.onerror = () => {
+                      videoStatusEl.textContent = 'Video unavailable: press Start to launch engine.';
+                    };
+                    videoEl.onload = () => {
+                      videoStatusEl.textContent = 'Video stream connected.';
+                    };
+
                     const eventSource = new EventSource('/api/sse');
                     eventSource.addEventListener('snapshot', (evt) => {
                       const data = JSON.parse(evt.data);
@@ -70,6 +96,12 @@ public class WebUiController {
                     async function control(action) {
                       const response = await fetch('/api/control/' + action, { method: 'POST' });
                       statusEl.textContent = 'POST /api/control/' + action + ' -> ' + response.status;
+                      if (action === 'start' || action === 'reset') {
+                        reconnectVideo();
+                      }
+                      if (action === 'stop') {
+                        videoStatusEl.textContent = 'Video stream stopped.';
+                      }
                     }
                   </script>
                 </body>
@@ -80,6 +112,50 @@ public class WebUiController {
     @GetMapping(value = "/api/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sse() {
         return stateService.addEmitter();
+    }
+
+    @GetMapping(value = "/api/video.mjpg")
+    public void mjpeg(HttpServletResponse response) throws IOException {
+        if (!stateService.isRunning() && stateService.getLatestJpegFrame() == null) {
+            response.sendError(HttpServletResponse.SC_CONFLICT, "Engine is not running. Press Start.");
+            return;
+        }
+
+        response.setStatus(HttpServletResponse.SC_OK);
+        response.setContentType("multipart/x-mixed-replace; boundary=frame");
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("Pragma", "no-cache");
+
+        byte[] boundary = "--frame\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] typeHeader = "Content-Type: image/jpeg\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] endHeaders = "\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] partBreak = "\r\n".getBytes(StandardCharsets.US_ASCII);
+
+        try (ServletOutputStream out = response.getOutputStream()) {
+            while (true) {
+                byte[] jpeg = stateService.getLatestJpegFrame();
+                if (jpeg == null) {
+                    if (!stateService.isRunning()) {
+                        break;
+                    }
+                    sleepQuietly(80L);
+                    continue;
+                }
+
+                byte[] lengthHeader = ("Content-Length: " + jpeg.length + "\r\n").getBytes(StandardCharsets.US_ASCII);
+                out.write(boundary);
+                out.write(typeHeader);
+                out.write(lengthHeader);
+                out.write(endHeaders);
+                out.write(jpeg);
+                out.write(partBreak);
+                out.flush();
+
+                sleepQuietly(80L);
+            }
+        } catch (IOException e) {
+            // client disconnected
+        }
     }
 
     @PostMapping("/api/control/start")
@@ -95,5 +171,13 @@ public class WebUiController {
     @PostMapping("/api/control/reset")
     public ResponseEntity<RppgSnapshot> reset() {
         return ResponseEntity.ok(stateService.reset());
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

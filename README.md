@@ -44,10 +44,13 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - `GET /` serves a single-page dashboard with:
   - BPM, quality, FPS, windowFill, warnings
   - Start / Stop / Reset buttons
+  - live preview image from `/api/video.mjpg`
 - `GET /api/sse` streams JSON snapshots using Server-Sent Events.
 - `POST /api/control/start|stop|reset` updates in-memory UI state and returns 200.
+- `GET /api/video.mjpg` streams multipart MJPEG (`boundary=frame`) from latest engine frames.
 - `start` launches the reusable `RppgEngine`; SSE then emits real engine snapshots (`bpm/quality/fps/windowFill/warnings`).
 - `stop` closes camera/processing thread cleanly; `reset` clears counters and signal window state.
+- If engine is not started, video endpoint returns `409` and UI shows a clear message.
 
 ## Haar Cascade File
 - Required file path:

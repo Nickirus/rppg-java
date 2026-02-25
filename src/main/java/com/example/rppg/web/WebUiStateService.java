@@ -33,6 +33,14 @@ public class WebUiStateService {
         return engine.getLatestSnapshot();
     }
 
+    public boolean isRunning() {
+        return engine.getLatestSnapshot().running();
+    }
+
+    public byte[] getLatestJpegFrame() {
+        return engine.getLatestJpegFrame();
+    }
+
     public RppgSnapshot start() {
         engine.start();
         RppgSnapshot snapshot = engine.getLatestSnapshot();
