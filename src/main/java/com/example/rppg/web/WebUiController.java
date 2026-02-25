@@ -1,5 +1,6 @@
 package com.example.rppg.web;
 
+import com.example.rppg.app.RppgSnapshot;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -82,17 +83,17 @@ public class WebUiController {
     }
 
     @PostMapping("/api/control/start")
-    public ResponseEntity<WebUiSnapshot> start() {
+    public ResponseEntity<RppgSnapshot> start() {
         return ResponseEntity.ok(stateService.start());
     }
 
     @PostMapping("/api/control/stop")
-    public ResponseEntity<WebUiSnapshot> stop() {
+    public ResponseEntity<RppgSnapshot> stop() {
         return ResponseEntity.ok(stateService.stop());
     }
 
     @PostMapping("/api/control/reset")
-    public ResponseEntity<WebUiSnapshot> reset() {
+    public ResponseEntity<RppgSnapshot> reset() {
         return ResponseEntity.ok(stateService.reset());
     }
 }

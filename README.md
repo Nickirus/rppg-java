@@ -46,6 +46,8 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - Start / Stop / Reset buttons
 - `GET /api/sse` streams JSON snapshots using Server-Sent Events.
 - `POST /api/control/start|stop|reset` updates in-memory UI state and returns 200.
+- `start` launches the reusable `RppgEngine`; SSE then emits real engine snapshots (`bpm/quality/fps/windowFill/warnings`).
+- `stop` closes camera/processing thread cleanly; `reset` clears counters and signal window state.
 
 ## Haar Cascade File
 - Required file path:

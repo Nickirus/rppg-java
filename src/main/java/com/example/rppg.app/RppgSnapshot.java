@@ -1,20 +1,22 @@
-package com.example.rppg.web;
+package com.example.rppg.app;
 
 import java.time.Instant;
 
-public record WebUiSnapshot(
+public record RppgSnapshot(
         String timestamp,
         boolean running,
+        double avgG,
         double bpm,
         double quality,
         double fps,
         double windowFill,
         String warnings
 ) {
-    static WebUiSnapshot initial() {
-        return new WebUiSnapshot(
+    public static RppgSnapshot initial() {
+        return new RppgSnapshot(
                 Instant.now().toString(),
                 false,
+                0.0,
                 0.0,
                 0.0,
                 0.0,
