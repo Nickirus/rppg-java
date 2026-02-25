@@ -157,6 +157,8 @@ public final class RppgEngine {
             HeartRateEstimator estimator = null;
             List<Double> warmupSamples = new ArrayList<>();
             long lastBpmUpdateNs = Long.MIN_VALUE;
+            long lastJpegEncodeNs = Long.MIN_VALUE;
+            long jpegEncodeIntervalNs = computeJpegEncodeIntervalNs(config.previewJpegFps());
             Double latestBpm = null;
             double latestQuality = 0.0;
             String latestWarning = "warming-up";
@@ -183,7 +185,10 @@ public final class RppgEngine {
 
                 if (lastFace == null) {
                     publish(true, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-face");
-                    renderAndStoreJpegFrame(bgr, null, null, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-face");
+                    if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
+                        renderAndStoreJpegFrame(bgr, null, null, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-face");
+                        lastJpegEncodeNs = System.nanoTime();
+                    }
                     continue;
                 }
 
@@ -191,7 +196,10 @@ public final class RppgEngine {
                 Rect foreheadRect = new Rect(forehead.x(), forehead.y(), forehead.width(), forehead.height());
                 if (foreheadRect.width() <= 0 || foreheadRect.height() <= 0) {
                     publish(true, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-roi");
-                    renderAndStoreJpegFrame(bgr, lastFace, null, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-roi");
+                    if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
+                        renderAndStoreJpegFrame(bgr, lastFace, null, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, 0.0, "no-roi");
+                        lastJpegEncodeNs = System.nanoTime();
+                    }
                     continue;
                 }
 
@@ -219,7 +227,10 @@ public final class RppgEngine {
                     warmupSamples.add(avgG);
                     csvLogger.log(Instant.now(), avgG, null, 0.0);
                     publish(true, avgG, 0.0, 0.0, measuredFps, 0.0, "warming-up");
-                    renderAndStoreJpegFrame(bgr, lastFace, foreheadRect, avgG, 0.0, 0.0, measuredFps, 0.0, "warming-up");
+                    if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
+                        renderAndStoreJpegFrame(bgr, lastFace, foreheadRect, avgG, 0.0, 0.0, measuredFps, 0.0, "warming-up");
+                        lastJpegEncodeNs = System.nanoTime();
+                    }
                     continue;
                 }
 
@@ -273,17 +284,20 @@ public final class RppgEngine {
                 }
 
                 publish(true, avgG, valueOrZero(latestBpm), latestQuality, measuredFps, fillPercent, latestWarning);
-                renderAndStoreJpegFrame(
-                        bgr,
-                        lastFace,
-                        foreheadRect,
-                        avgG,
-                        valueOrZero(latestBpm),
-                        latestQuality,
-                        measuredFps,
-                        fillPercent,
-                        latestWarning
-                );
+                if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
+                    renderAndStoreJpegFrame(
+                            bgr,
+                            lastFace,
+                            foreheadRect,
+                            avgG,
+                            valueOrZero(latestBpm),
+                            latestQuality,
+                            measuredFps,
+                            fillPercent,
+                            latestWarning
+                    );
+                    lastJpegEncodeNs = System.nanoTime();
+                }
             }
 
             publish(false, latestAvgG, valueOrZero(latestBpm), latestQuality, 0.0, 0.0, "stopped");
@@ -392,6 +406,18 @@ public final class RppgEngine {
         Mat roi = new Mat(bgrFrame, roiRect);
         Scalar channelMeans = mean(roi);
         return channelMeans.get(1);
+    }
+
+    private static long computeJpegEncodeIntervalNs(double previewJpegFps) {
+        double safeFps = (!Double.isFinite(previewJpegFps) || previewJpegFps <= 0.0) ? 10.0 : previewJpegFps;
+        return (long) Math.max(1_000_000L, Math.round(1_000_000_000.0 / safeFps));
+    }
+
+    private static boolean shouldEncodeJpeg(long intervalNs, long lastEncodeNs) {
+        if (lastEncodeNs == Long.MIN_VALUE) {
+            return true;
+        }
+        return System.nanoTime() - lastEncodeNs >= intervalNs;
     }
 
     private void renderAndStoreJpegFrame(

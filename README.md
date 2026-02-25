@@ -50,6 +50,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - `GET /api/video.mjpg` streams multipart MJPEG (`boundary=frame`) from latest engine frames.
 - `start` launches the reusable `RppgEngine`; SSE then emits real engine snapshots (`bpm/quality/fps/windowFill/warnings`).
 - `stop` closes camera/processing thread cleanly; `reset` clears counters and signal window state.
+- JPEG rendering/encoding is performed inside `RppgEngine` and throttled to about `10 fps` by default (`Config.previewJpegFps`).
 - If engine is not started, video endpoint returns `409` and UI shows a clear message.
 
 ## Haar Cascade File
