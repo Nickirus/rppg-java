@@ -10,16 +10,18 @@ version = '0.1.0-SNAPSHOT'
 description = 'rppg-java'
 
 def requestedJava = 25
+def springAsmMaxClassVersionJava = 24
 def currentJava = JavaVersion.current().majorVersion.toInteger()
 def effectiveJava = Math.min(requestedJava, currentJava)
+def effectiveBytecodeJava = Math.min(effectiveJava, springAsmMaxClassVersionJava)
 
 java {
-    sourceCompatibility = JavaVersion.toVersion(effectiveJava)
-    targetCompatibility = JavaVersion.toVersion(effectiveJava)
+    sourceCompatibility = JavaVersion.toVersion(effectiveBytecodeJava)
+    targetCompatibility = JavaVersion.toVersion(effectiveBytecodeJava)
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.release = effectiveJava
+    options.release = effectiveBytecodeJava
 }
 
 repositories {

@@ -3,7 +3,7 @@
 Minimal Java/Gradle skeleton for rPPG signal processing.
 
 ## Stack
-- Java 25 target (falls back to the highest local JDK when Java 25 is unavailable)
+- Java 25 runtime (bytecode level is capped for Spring compatibility; on JDK 25 it compiles as Java 24 bytecode)
 - Gradle
 - Spring Boot
 - JUnit 5 (tests only)
