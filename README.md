@@ -5,13 +5,22 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 ## Stack
 - Java 25 target (falls back to the highest local JDK when Java 25 is unavailable)
 - Gradle
+- Spring Boot
 - JUnit 5 (tests only)
 
 ## Run tests
 - `./gradlew test`
 
+## Single entry point
+- Main class: `com.example.rppg.RppgApplication`
+- Modes are selected by CLI flags in this one entry point:
+  - `--web`
+  - `--run`
+  - `--camera-check`
+
 ## Camera smoke-test (manual)
-- `./gradlew run --args="--camera-check"`
+- Preferred: `./gradlew bootRun --args="--camera-check"`
+- Also works: `./gradlew run --args="--camera-check"`
 - Opens a live preview for about 5 seconds using the default camera.
 - Prints measured FPS and frame size (`WxH`).
 - Draws overlays when a face is detected:
@@ -20,9 +29,10 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - If the camera is unavailable, exits gracefully with a clear error message.
 
 ## Run mode (manual)
-- `./gradlew run --args="--run"`
+- Preferred: `./gradlew bootRun --args="--run"`
+- Also works: `./gradlew run --args="--run"`
 - Optional CSV path override:
-  - `./gradlew run --args="--run --csv=./logs/custom.csv"`
+  - `./gradlew bootRun --args="--run --csv=./logs/custom.csv"`
 - Uses face detection and forehead ROI each frame.
 - Computes average green channel (`avgG`) from ROI and prints:
   - `avgG=...`
@@ -41,11 +51,13 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `NO_FACE`: no face detected for at least `2.0s` (`Config.noFaceWarningSeconds`)
   - `LOW_QUALITY`: signal window is full and quality is below `0.20` (`Config.qualityThreshold`)
   - `LOW_LIGHT`: ROI mean brightness is below `45.0` (`Config.lowLightBrightnessThreshold`)
-  - `TOO_MUCH_MOTION`: normalized face center shift is above `0.08` or face area change is above `0.25`
+- `TOO_MUCH_MOTION`: normalized face center shift is above `0.08` or face area change is above `0.25`
     (`Config.motionCenterThreshold`, `Config.motionAreaChangeThreshold`)
+- `--run` mode is headless (no web UI server).
 
 ## Web UI mode (manual)
-- `./gradlew run --args="--web"`
+- Preferred: `./gradlew bootRun --args="--web"`
+- Also works: `./gradlew run --args="--web"`
 - Starts Spring Boot server on `http://localhost:8080`.
 - `GET /` serves a single-page dashboard with:
   - BPM, quality, FPS, windowFill, warnings

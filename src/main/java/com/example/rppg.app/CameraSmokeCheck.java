@@ -25,7 +25,7 @@ import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
 import static org.bytedeco.opencv.global.opencv_imgproc.equalizeHist;
 import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 
-final class CameraSmokeCheck {
+public final class CameraSmokeCheck {
     private static final int CAMERA_INDEX = 0;
     private static final long CHECK_DURATION_MS = 5_000L;
     private static final int DETECT_EVERY_N_FRAMES = 3;
@@ -35,7 +35,7 @@ final class CameraSmokeCheck {
     private CameraSmokeCheck() {
     }
 
-    static boolean runDefaultCameraCheck() {
+    public static boolean runDefaultCameraCheck() {
         if (!Files.exists(CASCADE_PATH)) {
             System.err.println("Camera check failed: missing Haar cascade file.");
             System.err.println("Expected file: " + CASCADE_PATH.toAbsolutePath());

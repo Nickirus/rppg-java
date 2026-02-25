@@ -2,7 +2,7 @@ package com.example.rppg.app;
 
 import java.util.Locale;
 
-final class RunModeProcessor {
+public final class RunModeProcessor {
     private static final long POLL_INTERVAL_MS = 250L;
     private static final long MAX_RUN_DURATION_MS = 120_000L;
     private static final long POST_FULL_MONITOR_MS = 6_000L;
@@ -10,7 +10,7 @@ final class RunModeProcessor {
     private RunModeProcessor() {
     }
 
-    static boolean run(Config config) {
+    public static boolean run(Config config) {
         RppgEngine engine = new RppgEngine(config);
         engine.start();
 
