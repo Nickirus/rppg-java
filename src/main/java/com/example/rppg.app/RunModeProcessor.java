@@ -21,8 +21,9 @@ final class RunModeProcessor {
             while (System.currentTimeMillis() - startedMs <= MAX_RUN_DURATION_MS) {
                 RppgSnapshot snapshot = engine.getLatestSnapshot();
 
-                if (snapshot.warnings().startsWith("error:")) {
-                    System.err.println("Run mode failed: " + snapshot.warnings());
+                boolean hasError = snapshot.warnings().stream().anyMatch(code -> code.startsWith("ERROR_"));
+                if (hasError) {
+                    System.err.println("Run mode failed: " + String.join(",", snapshot.warnings()));
                     return false;
                 }
 
@@ -33,7 +34,7 @@ final class RunModeProcessor {
                         snapshot.windowFill(),
                         snapshot.bpm(),
                         snapshot.quality(),
-                        snapshot.warnings().isBlank() ? "none" : snapshot.warnings()
+                        snapshot.warnings().isEmpty() ? "none" : String.join(",", snapshot.warnings())
                 );
                 if (!line.equals(lastPrinted)) {
                     System.out.println(line);

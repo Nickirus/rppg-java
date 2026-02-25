@@ -10,7 +10,11 @@ public record Config(
         double hrMinHz,
         double hrMaxHz,
         String csvPath,
-        double qualityThreshold
+        double qualityThreshold,
+        double noFaceWarningSeconds,
+        double lowLightBrightnessThreshold,
+        double motionCenterThreshold,
+        double motionAreaChangeThreshold
 ) {
     public static Config defaults() {
         return new Config(
@@ -23,7 +27,11 @@ public record Config(
                 0.8,
                 2.5,
                 "./logs/rppg.csv",
-                0.20
+                0.20,
+                2.0,
+                45.0,
+                0.08,
+                0.25
         );
     }
 
@@ -38,7 +46,11 @@ public record Config(
                 hrMinHz,
                 hrMaxHz,
                 value,
-                qualityThreshold
+                qualityThreshold,
+                noFaceWarningSeconds,
+                lowLightBrightnessThreshold,
+                motionCenterThreshold,
+                motionAreaChangeThreshold
         );
     }
 }

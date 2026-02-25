@@ -37,6 +37,12 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - default path: `./logs/rppg.csv` (directory auto-created)
   - columns: `timestamp,avgG,bpm,quality`
   - no raw frames/video are written.
+- Warning heuristics (`warnings` array in snapshots):
+  - `NO_FACE`: no face detected for at least `2.0s` (`Config.noFaceWarningSeconds`)
+  - `LOW_QUALITY`: signal window is full and quality is below `0.20` (`Config.qualityThreshold`)
+  - `LOW_LIGHT`: ROI mean brightness is below `45.0` (`Config.lowLightBrightnessThreshold`)
+  - `TOO_MUCH_MOTION`: normalized face center shift is above `0.08` or face area change is above `0.25`
+    (`Config.motionCenterThreshold`, `Config.motionAreaChangeThreshold`)
 
 ## Web UI mode (manual)
 - `./gradlew run --args="--web"`
@@ -52,6 +58,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - `stop` closes camera/processing thread cleanly; `reset` clears counters and signal window state.
 - JPEG rendering/encoding is performed inside `RppgEngine` and throttled to about `10 fps` by default (`Config.previewJpegFps`).
 - If engine is not started, video endpoint returns `409` and UI shows a clear message.
+- The dashboard highlights active warnings in a dedicated panel.
 
 ## Haar Cascade File
 - Required file path:
@@ -63,3 +70,4 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 ## Notes
 - No camera access is required for tests.
 - Signal-processing tests use synthetic sine signals.
+- Warning flags are best-effort engineering heuristics, not medical diagnostics.

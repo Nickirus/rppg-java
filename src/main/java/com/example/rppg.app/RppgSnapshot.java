@@ -1,6 +1,7 @@
 package com.example.rppg.app;
 
 import java.time.Instant;
+import java.util.List;
 
 public record RppgSnapshot(
         String timestamp,
@@ -10,7 +11,7 @@ public record RppgSnapshot(
         double quality,
         double fps,
         double windowFill,
-        String warnings
+        List<String> warnings
 ) {
     public static RppgSnapshot initial() {
         return new RppgSnapshot(
@@ -21,7 +22,7 @@ public record RppgSnapshot(
                 0.0,
                 0.0,
                 0.0,
-                "idle"
+                List.of()
         );
     }
 }

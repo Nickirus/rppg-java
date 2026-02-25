@@ -44,6 +44,11 @@ public class WebUiController {
                     .video-wrap { background: #fff; border: 1px solid #d6deeb; border-radius: 10px; padding: 10px; margin-bottom: 12px; }
                     #videoFeed { width: 100%; max-width: 860px; border-radius: 8px; border: 1px solid #c9d5e8; background: #111827; }
                     #videoStatus { margin-top: 6px; color: #5f6e84; font-size: 13px; }
+                    .warnings-panel { min-height: 72px; }
+                    .warnings-panel.active { border-color: #dc2626; box-shadow: inset 0 0 0 1px #dc2626; background: #fff1f2; }
+                    #warningsList { display: flex; gap: 6px; flex-wrap: wrap; }
+                    .warning-chip { font-size: 12px; line-height: 1; font-weight: 700; color: #991b1b; background: #fecaca; border: 1px solid #f87171; border-radius: 999px; padding: 5px 8px; }
+                    .warning-none { color: #5f6e84; font-size: 13px; font-weight: 600; }
                     pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; min-height: 74px; overflow: auto; }
                   </style>
                 </head>
@@ -58,7 +63,7 @@ public class WebUiController {
                     <div class="card"><div class="label">Quality</div><div id="quality" class="value">--</div></div>
                     <div class="card"><div class="label">FPS</div><div id="fps" class="value">--</div></div>
                     <div class="card"><div class="label">Window Fill</div><div id="windowFill" class="value">--</div></div>
-                    <div class="card"><div class="label">Warnings</div><div id="warnings" class="value">--</div></div>
+                    <div id="warningsCard" class="card warnings-panel"><div class="label">Warnings</div><div id="warningsList"><span class="warning-none">none</span></div></div>
                   </div>
                   <div class="buttons">
                     <button onclick="control('start')">Start</button>
@@ -89,7 +94,25 @@ public class WebUiController {
                       document.getElementById('quality').textContent = data.quality.toFixed(3);
                       document.getElementById('fps').textContent = data.fps.toFixed(1);
                       document.getElementById('windowFill').textContent = data.windowFill.toFixed(1) + '%';
-                      document.getElementById('warnings').textContent = data.warnings || 'none';
+                      const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+                      const warningsCard = document.getElementById('warningsCard');
+                      const warningsList = document.getElementById('warningsList');
+                      warningsList.innerHTML = '';
+                      if (warnings.length === 0) {
+                        warningsCard.classList.remove('active');
+                        const none = document.createElement('span');
+                        none.className = 'warning-none';
+                        none.textContent = 'none';
+                        warningsList.appendChild(none);
+                      } else {
+                        warningsCard.classList.add('active');
+                        warnings.forEach((code) => {
+                          const chip = document.createElement('span');
+                          chip.className = 'warning-chip';
+                          chip.textContent = code;
+                          warningsList.appendChild(chip);
+                        });
+                      }
                       statusEl.textContent = JSON.stringify(data, null, 2);
                     });
                     eventSource.onerror = () => { statusEl.textContent = 'SSE disconnected'; };
