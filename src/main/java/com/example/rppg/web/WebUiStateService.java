@@ -8,6 +8,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -17,7 +22,11 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 public class WebUiStateService {
-    private final RppgEngine engine = new RppgEngine(Config.defaults());
+    private static final DateTimeFormatter SESSION_FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final String CSV_HEADER = "timestamp,avgG,bpm,quality";
+
+    private final Object engineLock = new Object();
+    private volatile RppgEngine engine = new RppgEngine(Config.defaults());
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "web-ui-ticker");
@@ -42,22 +51,42 @@ public class WebUiStateService {
     }
 
     public RppgSnapshot start() {
-        engine.start();
-        RppgSnapshot snapshot = engine.getLatestSnapshot();
+        RppgSnapshot snapshot;
+        synchronized (engineLock) {
+            RppgEngine current = engine;
+            if (current.getLatestSnapshot().running()) {
+                snapshot = current.getLatestSnapshot();
+            } else {
+                current.stop();
+                String sessionPath = nextSessionCsvPath();
+                ensureSessionCsvPrepared(sessionPath);
+                Config sessionConfig = Config.defaults().withCsvPath(sessionPath);
+                RppgEngine sessionEngine = new RppgEngine(sessionConfig);
+                sessionEngine.start();
+                engine = sessionEngine;
+                snapshot = sessionEngine.getLatestSnapshot();
+            }
+        }
         broadcast(snapshot);
         return snapshot;
     }
 
     public RppgSnapshot stop() {
-        engine.stop();
-        RppgSnapshot snapshot = engine.getLatestSnapshot();
+        RppgSnapshot snapshot;
+        synchronized (engineLock) {
+            engine.stop();
+            snapshot = engine.getLatestSnapshot();
+        }
         broadcast(snapshot);
         return snapshot;
     }
 
     public RppgSnapshot reset() {
-        engine.reset();
-        RppgSnapshot snapshot = engine.getLatestSnapshot();
+        RppgSnapshot snapshot;
+        synchronized (engineLock) {
+            engine.reset();
+            snapshot = engine.getLatestSnapshot();
+        }
         broadcast(snapshot);
         return snapshot;
     }
@@ -74,7 +103,9 @@ public class WebUiStateService {
 
     @PreDestroy
     public void shutdown() {
-        engine.stop();
+        synchronized (engineLock) {
+            engine.stop();
+        }
         scheduler.shutdownNow();
         for (SseEmitter emitter : emitters) {
             try {
@@ -111,6 +142,36 @@ public class WebUiStateService {
                 // ignore
             }
             return false;
+        }
+    }
+
+    private String nextSessionCsvPath() {
+        LocalDateTime now = LocalDateTime.now();
+        String ts = now.format(SESSION_FILE_TS);
+        Path logsDir = Paths.get("logs");
+        Path candidate = logsDir.resolve("session-" + ts + ".csv");
+        int suffix = 1;
+        while (Files.exists(candidate)) {
+            candidate = logsDir.resolve("session-" + ts + "-" + suffix + ".csv");
+            suffix++;
+        }
+        return candidate.toString();
+    }
+
+    private void ensureSessionCsvPrepared(String sessionPath) {
+        try {
+            Path path = Paths.get(sessionPath).toAbsolutePath().normalize();
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            if (!Files.exists(path)) {
+                Files.writeString(path, CSV_HEADER + System.lineSeparator());
+            } else if (Files.size(path) == 0L) {
+                Files.writeString(path, CSV_HEADER + System.lineSeparator());
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to prepare session CSV: " + sessionPath, e);
         }
     }
 }

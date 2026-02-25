@@ -17,6 +17,7 @@ import org.bytedeco.opencv.opencv_core.Scalar;
 import org.bytedeco.opencv.opencv_core.Size;
 import org.bytedeco.opencv.opencv_objdetect.CascadeClassifier;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -25,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.bytedeco.opencv.global.opencv_core.mean;
@@ -53,6 +55,9 @@ public final class RppgEngine {
     private final Config config;
     private final AtomicReference<RppgSnapshot> latestSnapshot = new AtomicReference<>(RppgSnapshot.initial());
     private final AtomicReference<byte[]> latestJpegFrame = new AtomicReference<>(null);
+    private final AtomicReference<String> sessionFilePath = new AtomicReference<>("");
+    private final AtomicLong sessionStartNs = new AtomicLong(0L);
+    private final AtomicLong sessionRowCount = new AtomicLong(0L);
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
     private final Object lifecycleLock = new Object();
 
@@ -68,6 +73,9 @@ public final class RppgEngine {
                 return true;
             }
             stopRequested.set(false);
+            sessionFilePath.set(config.csvPath());
+            sessionStartNs.set(System.nanoTime());
+            sessionRowCount.set(0L);
             publish(true, 0.0, 0.0, 0.0, 0.0, 0.0, List.of());
             workerThread = new Thread(this::runLoop, "rppg-engine");
             workerThread.setDaemon(true);
@@ -99,6 +107,9 @@ public final class RppgEngine {
 
     public void reset() {
         stop();
+        sessionFilePath.set("");
+        sessionStartNs.set(0L);
+        sessionRowCount.set(0L);
         latestSnapshot.set(new RppgSnapshot(
                 Instant.now().toString(),
                 false,
@@ -107,7 +118,10 @@ public final class RppgEngine {
                 0.0,
                 0.0,
                 0.0,
-                List.of()
+                List.of(),
+                "",
+                0.0,
+                0L
         ));
         latestJpegFrame.set(null);
     }
@@ -156,6 +170,8 @@ public final class RppgEngine {
         CsvSignalLogger csvLogger = null;
         try {
             csvLogger = CsvSignalLogger.open(config.csvPath());
+            sessionFilePath.set(config.csvPath());
+            sessionRowCount.set(0L);
 
             long startedNs = System.nanoTime();
             int capturedFrames = 0;
@@ -270,7 +286,7 @@ public final class RppgEngine {
 
                 if (signalWindow == null) {
                     warmupSamples.add(avgG);
-                    csvLogger.log(Instant.now(), avgG, null, 0.0);
+                    logCsv(csvLogger, Instant.now(), avgG, null, 0.0);
                     List<String> warnings = buildWarnings(false, 0.0, brightness, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
                     publish(true, avgG, 0.0, 0.0, measuredFps, 0.0, warnings);
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
@@ -318,11 +334,11 @@ public final class RppgEngine {
                         }
                         lastBpmUpdateNs = estimateNowNs;
                     }
-                    csvLogger.log(Instant.now(), avgG, latestBpm, latestQuality);
+                    logCsv(csvLogger, Instant.now(), avgG, latestBpm, latestQuality);
                 } else {
                     latestBpm = null;
                     latestQuality = 0.0;
-                    csvLogger.log(Instant.now(), avgG, null, 0.0);
+                    logCsv(csvLogger, Instant.now(), avgG, null, 0.0);
                 }
 
                 List<String> warnings = buildWarnings(
@@ -422,6 +438,10 @@ public final class RppgEngine {
             double windowFill,
             List<String> warnings
     ) {
+        long startedNs = sessionStartNs.get();
+        double sessionDurationSec = startedNs <= 0L
+                ? 0.0
+                : (System.nanoTime() - startedNs) / 1_000_000_000.0;
         latestSnapshot.set(new RppgSnapshot(
                 Instant.now().toString(),
                 running,
@@ -430,8 +450,16 @@ public final class RppgEngine {
                 round3(quality),
                 round2(fps),
                 round1(windowFill),
-                warnings == null ? List.of() : List.copyOf(warnings)
+                warnings == null ? List.of() : List.copyOf(warnings),
+                sessionFilePath.get(),
+                round1(Math.max(0.0, sessionDurationSec)),
+                sessionRowCount.get()
         ));
+    }
+
+    private void logCsv(CsvSignalLogger logger, Instant timestamp, double avgG, Double bpm, double quality) throws IOException {
+        logger.log(timestamp, avgG, bpm, quality);
+        sessionRowCount.incrementAndGet();
     }
 
     private static double valueOrZero(Double value) {

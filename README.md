@@ -67,7 +67,16 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - `POST /api/control/start|stop|reset` updates in-memory UI state and returns 200.
 - `GET /api/video.mjpg` streams multipart MJPEG (`boundary=frame`) from latest engine frames.
 - `start` launches the reusable `RppgEngine`; SSE then emits real engine snapshots (`bpm/quality/fps/windowFill/warnings`).
+- In web mode, `start` creates a new session CSV with local timestamp:
+  - `logs/session-YYYYMMDD-HHMMSS.csv`
+  - if a file with the same second exists, a numeric suffix is appended.
+  - header is written once: `timestamp,avgG,bpm,quality`
+- Session snapshot fields exposed via SSE:
+  - `sessionFilePath`
+  - `sessionDurationSec`
+  - `sessionRowCount`
 - `stop` closes camera/processing thread cleanly; `reset` clears counters and signal window state.
+- `stop` flushes/closes the current session CSV; next `start` creates a new file.
 - JPEG rendering/encoding is performed inside `RppgEngine` and throttled to about `10 fps` by default (`Config.previewJpegFps`).
 - If engine is not started, video endpoint returns `409` and UI shows a clear message.
 - The dashboard highlights active warnings in a dedicated panel.

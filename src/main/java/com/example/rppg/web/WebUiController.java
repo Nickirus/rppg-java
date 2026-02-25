@@ -49,6 +49,7 @@ public class WebUiController {
                     #warningsList { display: flex; gap: 6px; flex-wrap: wrap; }
                     .warning-chip { font-size: 12px; line-height: 1; font-weight: 700; color: #991b1b; background: #fecaca; border: 1px solid #f87171; border-radius: 999px; padding: 5px 8px; }
                     .warning-none { color: #5f6e84; font-size: 13px; font-weight: 600; }
+                    .small { font-size: 13px; font-weight: 600; word-break: break-all; }
                     pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; min-height: 74px; overflow: auto; }
                   </style>
                 </head>
@@ -63,6 +64,9 @@ public class WebUiController {
                     <div class="card"><div class="label">Quality</div><div id="quality" class="value">--</div></div>
                     <div class="card"><div class="label">FPS</div><div id="fps" class="value">--</div></div>
                     <div class="card"><div class="label">Window Fill</div><div id="windowFill" class="value">--</div></div>
+                    <div class="card"><div class="label">Session File</div><div id="sessionFilePath" class="small">--</div></div>
+                    <div class="card"><div class="label">Session Duration</div><div id="sessionDurationSec" class="value">--</div></div>
+                    <div class="card"><div class="label">Session Rows</div><div id="sessionRowCount" class="value">--</div></div>
                     <div id="warningsCard" class="card warnings-panel"><div class="label">Warnings</div><div id="warningsList"><span class="warning-none">none</span></div></div>
                   </div>
                   <div class="buttons">
@@ -94,6 +98,9 @@ public class WebUiController {
                       document.getElementById('quality').textContent = data.quality.toFixed(3);
                       document.getElementById('fps').textContent = data.fps.toFixed(1);
                       document.getElementById('windowFill').textContent = data.windowFill.toFixed(1) + '%';
+                      document.getElementById('sessionFilePath').textContent = data.sessionFilePath || '--';
+                      document.getElementById('sessionDurationSec').textContent = (data.sessionDurationSec || 0).toFixed(1) + 's';
+                      document.getElementById('sessionRowCount').textContent = String(data.sessionRowCount || 0);
                       const warnings = Array.isArray(data.warnings) ? data.warnings : [];
                       const warningsCard = document.getElementById('warningsCard');
                       const warningsList = document.getElementById('warningsList');

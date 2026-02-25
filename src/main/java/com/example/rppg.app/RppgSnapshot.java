@@ -11,7 +11,10 @@ public record RppgSnapshot(
         double quality,
         double fps,
         double windowFill,
-        List<String> warnings
+        List<String> warnings,
+        String sessionFilePath,
+        double sessionDurationSec,
+        long sessionRowCount
 ) {
     public static RppgSnapshot initial() {
         return new RppgSnapshot(
@@ -22,7 +25,10 @@ public record RppgSnapshot(
                 0.0,
                 0.0,
                 0.0,
-                List.of()
+                List.of(),
+                "",
+                0.0,
+                0L
         );
     }
 }
