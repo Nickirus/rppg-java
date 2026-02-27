@@ -3,6 +3,7 @@ package com.example.rppg;
 import com.example.rppg.app.CameraSmokeCheck;
 import com.example.rppg.app.Config;
 import com.example.rppg.app.RunModeProcessor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -10,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @SpringBootApplication
+@Slf4j
 public class RppgApplication {
     private static final String ARG_WEB = "--web";
     private static final String ARG_RUN = "--run";
@@ -44,7 +46,7 @@ public class RppgApplication {
                 app.setDefaultProperties(properties);
                 app.run(args);
             }
-            case NONE -> System.out.println("Usage: --web | --run [--csv=PATH] | --camera-check");
+            case NONE -> log.info("Usage: --web | --run [--csv=PATH] | --camera-check");
         }
     }
 

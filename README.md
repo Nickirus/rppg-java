@@ -11,6 +11,10 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 ## Run tests
 - `./gradlew test`
 
+## Lombok
+- Lombok is enabled for main and test source sets via annotation processing.
+- Repo-level `lombok.config` uses conservative defaults and flags risky usage such as `@SneakyThrows`.
+
 ## Single entry point
 - Main class: `com.example.rppg.RppgApplication`
 - Modes are selected by CLI flags in this one entry point:
