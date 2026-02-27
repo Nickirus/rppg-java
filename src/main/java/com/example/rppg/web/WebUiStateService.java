@@ -3,7 +3,9 @@ package com.example.rppg.web;
 import com.example.rppg.app.Config;
 import com.example.rppg.app.RppgEngine;
 import com.example.rppg.app.RppgSnapshot;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -23,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class WebUiStateService {
     private static final DateTimeFormatter SESSION_FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final String CSV_HEADER = "timestamp,avgG,bpm,quality";
@@ -36,7 +39,8 @@ public class WebUiStateService {
         return thread;
     });
 
-    public WebUiStateService() {
+    @PostConstruct
+    void init() {
         scheduler.scheduleAtFixedRate(this::broadcastLatestSnapshot, 0L, 1L, TimeUnit.SECONDS);
     }
 

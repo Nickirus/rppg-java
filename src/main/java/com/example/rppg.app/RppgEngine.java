@@ -5,6 +5,10 @@ import com.example.rppg.vision.RoiSelector;
 import com.example.signal.HeartRateEstimator;
 import com.example.signal.SignalQualityScorer;
 import com.example.signal.SignalWindow;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacv.Frame;
@@ -42,6 +46,7 @@ import static org.bytedeco.opencv.global.opencv_imgproc.putText;
 import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 
 @Slf4j
+@RequiredArgsConstructor
 public final class RppgEngine {
     private static final int DETECT_EVERY_N_FRAMES = 3;
     private static final int MIN_FRAMES_FOR_FPS_ESTIMATE = 15;
@@ -66,10 +71,6 @@ public final class RppgEngine {
     private final Object lifecycleLock = new Object();
 
     private Thread workerThread;
-
-    public RppgEngine(Config config) {
-        this.config = config;
-    }
 
     public boolean start() {
         synchronized (lifecycleLock) {
@@ -697,6 +698,9 @@ public final class RppgEngine {
         }
     }
 
+    @Getter
+    @ToString
+    @EqualsAndHashCode
     private static final class WarningLogState {
         private boolean noFaceActive;
         private boolean lowQualityActive;

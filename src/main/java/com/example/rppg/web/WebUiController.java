@@ -3,6 +3,7 @@ package com.example.rppg.web;
 import com.example.rppg.app.RppgSnapshot;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -16,12 +17,9 @@ import java.nio.charset.StandardCharsets;
 
 @RestController
 @Slf4j
+@RequiredArgsConstructor
 public class WebUiController {
     private final WebUiStateService stateService;
-
-    public WebUiController(WebUiStateService stateService) {
-        this.stateService = stateService;
-    }
 
     @GetMapping(value = "/", produces = MediaType.TEXT_HTML_VALUE)
     public String index() {
@@ -52,6 +50,10 @@ public class WebUiController {
                     .warning-chip { font-size: 12px; line-height: 1; font-weight: 700; color: #991b1b; background: #fecaca; border: 1px solid #f87171; border-radius: 999px; padding: 5px 8px; }
                     .warning-none { color: #5f6e84; font-size: 13px; font-weight: 600; }
                     .small { font-size: 13px; font-weight: 600; word-break: break-all; }
+                    .chart-wrap { background: #fff; border: 1px solid #d6deeb; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+                    #bpmChart { width: 100%; height: 180px; display: block; border: 1px solid #d7dfed; border-radius: 8px; background: #f8fafc; }
+                    #avgGChart { width: 100%; height: 180px; display: block; border: 1px solid #d7dfed; border-radius: 8px; background: #f8fafc; }
+                    .chart-note { margin-top: 6px; color: #5f6e84; font-size: 12px; }
                     pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; min-height: 74px; overflow: auto; }
                   </style>
                 </head>
@@ -76,11 +78,273 @@ public class WebUiController {
                     <button onclick="control('stop')">Stop</button>
                     <button onclick="control('reset')">Reset</button>
                   </div>
+                  <div class="chart-wrap">
+                    <div class="label">BPM History</div>
+                    <canvas id="bpmChart" width="900" height="220"></canvas>
+                    <div class="chart-note">Last 300 points from SSE. Invalid or LOW_QUALITY points are skipped.</div>
+                  </div>
+                  <div class="chart-wrap">
+                    <div class="label">avgG History</div>
+                    <canvas id="avgGChart" width="900" height="220"></canvas>
+                    <div class="chart-note">Last 600 points from SSE with auto-scale in the visible window.</div>
+                  </div>
                   <pre id="status">Connecting to SSE...</pre>
                   <script>
                     const statusEl = document.getElementById('status');
                     const videoEl = document.getElementById('videoFeed');
                     const videoStatusEl = document.getElementById('videoStatus');
+                    const BPM_HISTORY_SIZE = 300;
+                    const AVGG_HISTORY_SIZE = 600;
+                    const bpmHistory = new Array(BPM_HISTORY_SIZE).fill(null);
+                    const avgGHistory = new Array(AVGG_HISTORY_SIZE).fill(null);
+                    let bpmWriteIndex = 0;
+                    let avgGWriteIndex = 0;
+                    let bpmCount = 0;
+                    let avgGCount = 0;
+                    let bpmChartDirty = true;
+                    let avgGChartDirty = true;
+                    const bpmCanvas = document.getElementById('bpmChart');
+                    const bpmCtx = bpmCanvas.getContext('2d');
+                    const avgGCanvas = document.getElementById('avgGChart');
+                    const avgGCtx = avgGCanvas.getContext('2d');
+
+                    function clearCharts() {
+                      bpmHistory.fill(null);
+                      avgGHistory.fill(null);
+                      bpmWriteIndex = 0;
+                      avgGWriteIndex = 0;
+                      bpmCount = 0;
+                      avgGCount = 0;
+                      bpmChartDirty = true;
+                      avgGChartDirty = true;
+                    }
+
+                    function pushBpmPoint(data, warnings) {
+                      const bpm = data && typeof data.bpm === 'number' ? data.bpm : NaN;
+                      const valid = Number.isFinite(bpm) && bpm > 0 && !warnings.includes('LOW_QUALITY');
+                      bpmHistory[bpmWriteIndex] = valid ? bpm : null;
+                      bpmWriteIndex = (bpmWriteIndex + 1) % BPM_HISTORY_SIZE;
+                      bpmCount = Math.min(bpmCount + 1, BPM_HISTORY_SIZE);
+                      bpmChartDirty = true;
+                    }
+
+                    function pushAvgGPoint(data) {
+                      const avgG = data && typeof data.avgG === 'number' ? data.avgG : NaN;
+                      avgGHistory[avgGWriteIndex] = Number.isFinite(avgG) ? avgG : null;
+                      avgGWriteIndex = (avgGWriteIndex + 1) % AVGG_HISTORY_SIZE;
+                      avgGCount = Math.min(avgGCount + 1, AVGG_HISTORY_SIZE);
+                      avgGChartDirty = true;
+                    }
+
+                    function bpmAt(indexFromOldest) {
+                      const start = (bpmWriteIndex - bpmCount + BPM_HISTORY_SIZE) % BPM_HISTORY_SIZE;
+                      const idx = (start + indexFromOldest) % BPM_HISTORY_SIZE;
+                      return bpmHistory[idx];
+                    }
+
+                    function avgGAt(indexFromOldest) {
+                      const start = (avgGWriteIndex - avgGCount + AVGG_HISTORY_SIZE) % AVGG_HISTORY_SIZE;
+                      const idx = (start + indexFromOldest) % AVGG_HISTORY_SIZE;
+                      return avgGHistory[idx];
+                    }
+
+                    function resizeCanvas(canvas, ctx) {
+                      const dpr = window.devicePixelRatio || 1;
+                      const rect = canvas.getBoundingClientRect();
+                      const cssWidth = Math.max(200, Math.floor(rect.width));
+                      const cssHeight = 180;
+                      canvas.width = Math.floor(cssWidth * dpr);
+                      canvas.height = Math.floor(cssHeight * dpr);
+                      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                    }
+
+                    function resizeCharts() {
+                      resizeCanvas(bpmCanvas, bpmCtx);
+                      resizeCanvas(avgGCanvas, avgGCtx);
+                      bpmChartDirty = true;
+                      avgGChartDirty = true;
+                    }
+
+                    function drawBpmChart() {
+                      if (!bpmChartDirty) {
+                        return;
+                      }
+                      bpmChartDirty = false;
+
+                      const w = Math.max(1, bpmCanvas.clientWidth);
+                      const h = 180;
+                      const left = 36;
+                      const right = 10;
+                      const top = 10;
+                      const bottom = 22;
+                      const plotW = Math.max(1, w - left - right);
+                      const plotH = Math.max(1, h - top - bottom);
+                      const minBpm = 40;
+                      const maxBpm = 180;
+
+                      bpmCtx.clearRect(0, 0, w, h);
+                      bpmCtx.fillStyle = '#f8fafc';
+                      bpmCtx.fillRect(0, 0, w, h);
+
+                      bpmCtx.strokeStyle = '#d0d9ea';
+                      bpmCtx.lineWidth = 1;
+                      for (let i = 0; i <= 4; i++) {
+                        const y = top + (i / 4) * plotH;
+                        bpmCtx.beginPath();
+                        bpmCtx.moveTo(left, y);
+                        bpmCtx.lineTo(left + plotW, y);
+                        bpmCtx.stroke();
+
+                        const label = Math.round(maxBpm - (i / 4) * (maxBpm - minBpm));
+                        bpmCtx.fillStyle = '#64748b';
+                        bpmCtx.font = '11px Segoe UI';
+                        bpmCtx.fillText(String(label), 4, y + 3);
+                      }
+
+                      bpmCtx.strokeStyle = '#1d4ed8';
+                      bpmCtx.lineWidth = 2;
+                      bpmCtx.beginPath();
+                      let started = false;
+                      let validCount = 0;
+                      let lastX = 0;
+                      let lastY = 0;
+                      for (let i = 0; i < bpmCount; i++) {
+                        const v = bpmAt(i);
+                        if (v == null) {
+                          started = false;
+                          continue;
+                        }
+                        validCount++;
+                        const x = left + (bpmCount <= 1 ? 0 : (i / (bpmCount - 1)) * plotW);
+                        const clamped = Math.max(minBpm, Math.min(maxBpm, v));
+                        const y = top + (1 - ((clamped - minBpm) / (maxBpm - minBpm))) * plotH;
+                        if (!started) {
+                          bpmCtx.moveTo(x, y);
+                          started = true;
+                        } else {
+                          bpmCtx.lineTo(x, y);
+                        }
+                        lastX = x;
+                        lastY = y;
+                      }
+                      bpmCtx.stroke();
+
+                      if (validCount > 0) {
+                        bpmCtx.fillStyle = '#1d4ed8';
+                        bpmCtx.beginPath();
+                        bpmCtx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+                        bpmCtx.fill();
+                      } else {
+                        bpmCtx.fillStyle = '#64748b';
+                        bpmCtx.font = '12px Segoe UI';
+                        bpmCtx.fillText('Waiting for valid BPM points...', left + 8, top + 18);
+                      }
+                    }
+
+                    function drawAvgGChart() {
+                      if (!avgGChartDirty) {
+                        return;
+                      }
+                      avgGChartDirty = false;
+
+                      const w = Math.max(1, avgGCanvas.clientWidth);
+                      const h = 180;
+                      const left = 52;
+                      const right = 10;
+                      const top = 10;
+                      const bottom = 22;
+                      const plotW = Math.max(1, w - left - right);
+                      const plotH = Math.max(1, h - top - bottom);
+
+                      avgGCtx.clearRect(0, 0, w, h);
+                      avgGCtx.fillStyle = '#f8fafc';
+                      avgGCtx.fillRect(0, 0, w, h);
+
+                      let min = Number.POSITIVE_INFINITY;
+                      let max = Number.NEGATIVE_INFINITY;
+                      let validCount = 0;
+                      for (let i = 0; i < avgGCount; i++) {
+                        const v = avgGAt(i);
+                        if (v == null) {
+                          continue;
+                        }
+                        validCount++;
+                        if (v < min) min = v;
+                        if (v > max) max = v;
+                      }
+
+                      if (validCount === 0) {
+                        avgGCtx.fillStyle = '#64748b';
+                        avgGCtx.font = '12px Segoe UI';
+                        avgGCtx.fillText('Waiting for avgG points...', left + 8, top + 18);
+                        return;
+                      }
+
+                      if (max <= min) {
+                        const pad = Math.max(1.0, Math.abs(min) * 0.05);
+                        min -= pad;
+                        max += pad;
+                      } else {
+                        const pad = (max - min) * 0.1;
+                        min -= pad;
+                        max += pad;
+                      }
+
+                      avgGCtx.strokeStyle = '#d0d9ea';
+                      avgGCtx.lineWidth = 1;
+                      for (let i = 0; i <= 4; i++) {
+                        const y = top + (i / 4) * plotH;
+                        avgGCtx.beginPath();
+                        avgGCtx.moveTo(left, y);
+                        avgGCtx.lineTo(left + plotW, y);
+                        avgGCtx.stroke();
+
+                        const labelValue = max - (i / 4) * (max - min);
+                        avgGCtx.fillStyle = '#64748b';
+                        avgGCtx.font = '11px Segoe UI';
+                        avgGCtx.fillText(labelValue.toFixed(1), 4, y + 3);
+                      }
+
+                      avgGCtx.strokeStyle = '#15803d';
+                      avgGCtx.lineWidth = 2;
+                      avgGCtx.beginPath();
+                      let started = false;
+                      let lastX = 0;
+                      let lastY = 0;
+                      for (let i = 0; i < avgGCount; i++) {
+                        const v = avgGAt(i);
+                        if (v == null) {
+                          started = false;
+                          continue;
+                        }
+                        const x = left + (avgGCount <= 1 ? 0 : (i / (avgGCount - 1)) * plotW);
+                        const y = top + (1 - ((v - min) / (max - min))) * plotH;
+                        if (!started) {
+                          avgGCtx.moveTo(x, y);
+                          started = true;
+                        } else {
+                          avgGCtx.lineTo(x, y);
+                        }
+                        lastX = x;
+                        lastY = y;
+                      }
+                      avgGCtx.stroke();
+
+                      avgGCtx.fillStyle = '#15803d';
+                      avgGCtx.beginPath();
+                      avgGCtx.arc(lastX, lastY, 3, 0, Math.PI * 2);
+                      avgGCtx.fill();
+                    }
+
+                    function chartLoop() {
+                      drawBpmChart();
+                      drawAvgGChart();
+                      window.requestAnimationFrame(chartLoop);
+                    }
+
+                    window.addEventListener('resize', resizeCharts);
+                    resizeCharts();
+                    chartLoop();
 
                     function reconnectVideo() {
                       videoEl.src = '/api/video.mjpg?ts=' + Date.now();
@@ -104,6 +368,8 @@ public class WebUiController {
                       document.getElementById('sessionDurationSec').textContent = (data.sessionDurationSec || 0).toFixed(1) + 's';
                       document.getElementById('sessionRowCount').textContent = String(data.sessionRowCount || 0);
                       const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+                      pushBpmPoint(data, warnings);
+                      pushAvgGPoint(data);
                       const warningsCard = document.getElementById('warningsCard');
                       const warningsList = document.getElementById('warningsList');
                       warningsList.innerHTML = '';
@@ -129,6 +395,7 @@ public class WebUiController {
                       const response = await fetch('/api/control/' + action, { method: 'POST' });
                       statusEl.textContent = 'POST /api/control/' + action + ' -> ' + response.status;
                       if (action === 'start' || action === 'reset') {
+                        clearCharts();
                         reconnectVideo();
                       }
                       if (action === 'stop') {
