@@ -66,6 +66,7 @@ public class WebUiController {
                   <div class="grid">
                     <div class="card"><div class="label">BPM</div><div id="bpm" class="value">--</div></div>
                     <div class="card"><div class="label">BPM Status</div><div id="bpmStatus" class="value">INVALID</div></div>
+                    <div class="card"><div class="label">Signal Method</div><div id="signalMethod" class="value">--</div></div>
                     <div class="card"><div class="label">Quality</div><div id="quality" class="value">--</div></div>
                     <div class="card"><div class="label">FPS</div><div id="fps" class="value">--</div></div>
                     <div class="card"><div class="label">Window Fill</div><div id="windowFill" class="value">--</div></div>
@@ -364,8 +365,10 @@ public class WebUiController {
                       const data = JSON.parse(evt.data);
                       const bpm = data && typeof data.bpm === 'number' ? data.bpm : NaN;
                       const bpmStatus = data && typeof data.bpmStatus === 'string' ? data.bpmStatus : 'INVALID';
+                      const signalMethod = data && typeof data.signalMethod === 'string' ? data.signalMethod : '--';
                       document.getElementById('bpm').textContent = Number.isFinite(bpm) ? bpm.toFixed(1) : '--';
                       document.getElementById('bpmStatus').textContent = bpmStatus;
+                      document.getElementById('signalMethod').textContent = signalMethod;
                       document.getElementById('quality').textContent = data.quality.toFixed(3);
                       document.getElementById('fps').textContent = data.fps.toFixed(1);
                       document.getElementById('windowFill').textContent = data.windowFill.toFixed(1) + '%';

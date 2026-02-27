@@ -35,7 +35,8 @@ public final class RunModeProcessor {
 
                 String line = String.format(
                         Locale.US,
-                        "avgG=%.2f, windowFill=%.1f%%, bpm=%.1f, quality=%.3f, warnings=%s",
+                        "method=%s, avgG=%.2f, windowFill=%.1f%%, bpm=%.1f, quality=%.3f, warnings=%s",
+                        snapshot.signalMethod(),
                         snapshot.avgG(),
                         snapshot.windowFill(),
                         snapshot.bpm(),

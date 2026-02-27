@@ -1,5 +1,7 @@
 package com.example.rppg.app;
 
+import com.example.signal.SignalMethod;
+
 public record Config(
         int cameraIndex,
         int targetWidth,
@@ -12,6 +14,11 @@ public record Config(
         String csvPath,
         double qualityThreshold,
         double maxStepPerUpdateBpm,
+        SignalMethod signalMethod,
+        int extractorTemporalWindow,
+        double autoFallbackMinHoldSeconds,
+        int autoLowQualityUpdatesThreshold,
+        double autoSwitchCooldownSeconds,
         double noFaceWarningSeconds,
         double lowLightBrightnessThreshold,
         double motionCenterThreshold,
@@ -29,6 +36,11 @@ public record Config(
                 2.5,
                 "./logs/rppg.csv",
                 0.20,
+                8.0,
+                SignalMethod.AUTO,
+                32,
+                8.0,
+                3,
                 8.0,
                 2.0,
                 45.0,
@@ -50,6 +62,11 @@ public record Config(
                 value,
                 qualityThreshold,
                 maxStepPerUpdateBpm,
+                signalMethod,
+                extractorTemporalWindow,
+                autoFallbackMinHoldSeconds,
+                autoLowQualityUpdatesThreshold,
+                autoSwitchCooldownSeconds,
                 noFaceWarningSeconds,
                 lowLightBrightnessThreshold,
                 motionCenterThreshold,

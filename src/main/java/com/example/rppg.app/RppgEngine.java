@@ -2,10 +2,17 @@ package com.example.rppg.app;
 
 import com.example.rppg.vision.FaceTracker;
 import com.example.rppg.vision.RoiSelector;
+import com.example.signal.AutoSignalMethodSelector;
 import com.example.signal.BpmStabilizer;
 import com.example.signal.BpmStatus;
+import com.example.signal.ChromExtractor;
+import com.example.signal.GreenExtractor;
 import com.example.signal.HeartRateEstimator;
+import com.example.signal.PosExtractor;
+import com.example.signal.RoiStats;
+import com.example.signal.RppgSignalExtractor;
 import com.example.signal.SignalQualityScorer;
+import com.example.signal.SignalMethod;
 import com.example.signal.SignalWindow;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -30,6 +37,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -84,7 +92,18 @@ public final class RppgEngine {
             sessionFilePath.set(config.csvPath());
             sessionStartNs.set(System.nanoTime());
             sessionRowCount.set(0L);
-            publish(true, 0.0, 0.0, 0.0, BpmStatus.INVALID, 0.0, 0.0, 0.0, List.of());
+            publish(
+                    true,
+                    0.0,
+                    0.0,
+                    0.0,
+                    BpmStatus.INVALID,
+                    initialActiveSignalMethod(config.signalMethod()),
+                    0.0,
+                    0.0,
+                    0.0,
+                    List.of()
+            );
             workerThread = new Thread(this::runLoop, "rppg-engine");
             workerThread.setDaemon(true);
             workerThread.start();
@@ -129,6 +148,7 @@ public final class RppgEngine {
                 0.0,
                 0.0,
                 BpmStatus.INVALID,
+                initialActiveSignalMethod(config.signalMethod()),
                 0.0,
                 0.0,
                 0.0,
@@ -156,14 +176,36 @@ public final class RppgEngine {
     private void runLoop() {
         if (!Files.exists(CASCADE_PATH)) {
             log.warn("Missing Haar cascade file: {}", CASCADE_PATH);
-            publish(false, 0.0, 0.0, 0.0, BpmStatus.INVALID, 0.0, 0.0, 0.0, List.of("ERROR_MISSING_CASCADE"));
+            publish(
+                    false,
+                    0.0,
+                    0.0,
+                    0.0,
+                    BpmStatus.INVALID,
+                    initialActiveSignalMethod(config.signalMethod()),
+                    0.0,
+                    0.0,
+                    0.0,
+                    List.of("ERROR_MISSING_CASCADE")
+            );
             return;
         }
 
         CascadeClassifier classifier = new CascadeClassifier(CASCADE_PATH.toString());
         if (classifier.empty()) {
             log.warn("Invalid Haar cascade file: {}", CASCADE_PATH);
-            publish(false, 0.0, 0.0, 0.0, BpmStatus.INVALID, 0.0, 0.0, 0.0, List.of("ERROR_INVALID_CASCADE"));
+            publish(
+                    false,
+                    0.0,
+                    0.0,
+                    0.0,
+                    BpmStatus.INVALID,
+                    initialActiveSignalMethod(config.signalMethod()),
+                    0.0,
+                    0.0,
+                    0.0,
+                    List.of("ERROR_INVALID_CASCADE")
+            );
             return;
         }
 
@@ -177,7 +219,18 @@ public final class RppgEngine {
         } catch (Exception e) {
             classifier.close();
             log.warn("Camera unavailable: {}", e.getMessage());
-            publish(false, 0.0, 0.0, 0.0, BpmStatus.INVALID, 0.0, 0.0, 0.0, List.of("ERROR_CAMERA_UNAVAILABLE"));
+            publish(
+                    false,
+                    0.0,
+                    0.0,
+                    0.0,
+                    BpmStatus.INVALID,
+                    initialActiveSignalMethod(config.signalMethod()),
+                    0.0,
+                    0.0,
+                    0.0,
+                    List.of("ERROR_CAMERA_UNAVAILABLE")
+            );
             return;
         }
 
@@ -201,6 +254,13 @@ public final class RppgEngine {
             long lastBpmUpdateNs = Long.MIN_VALUE;
             long lastJpegEncodeNs = Long.MIN_VALUE;
             long jpegEncodeIntervalNs = computeJpegEncodeIntervalNs(config.previewJpegFps());
+            EnumMap<SignalMethod, RppgSignalExtractor> extractors = createExtractors(config.extractorTemporalWindow());
+            AutoSignalMethodSelector methodSelector = new AutoSignalMethodSelector(
+                    config.autoFallbackMinHoldSeconds(),
+                    config.autoLowQualityUpdatesThreshold(),
+                    config.autoSwitchCooldownSeconds()
+            );
+            SignalMethod activeMethod = methodSelector.current(config.signalMethod());
             BpmStabilizer stabilizer = new BpmStabilizer(config.maxStepPerUpdateBpm());
             BpmStabilizer.Decision latestBpmDecision = BpmStabilizer.Decision.invalid();
             double latestQuality = 0.0;
@@ -259,6 +319,7 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestBpmDecision.rawBpm(),
                             latestBpmDecision.status(),
+                            activeMethod,
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -273,6 +334,7 @@ public final class RppgEngine {
                                 latestBpmDecision.bpm(),
                                 latestBpmDecision.rawBpm(),
                                 latestBpmDecision.status(),
+                                activeMethod,
                                 latestQuality,
                                 measuredFps,
                                 fillPercent,
@@ -304,6 +366,7 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestBpmDecision.rawBpm(),
                             latestBpmDecision.status(),
+                            activeMethod,
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -318,6 +381,7 @@ public final class RppgEngine {
                                 latestBpmDecision.bpm(),
                                 latestBpmDecision.rawBpm(),
                                 latestBpmDecision.status(),
+                                activeMethod,
                                 latestQuality,
                                 measuredFps,
                                 fillPercent,
@@ -328,8 +392,12 @@ public final class RppgEngine {
                     continue;
                 }
 
-                double avgG = averageGreenChannel(bgr, foreheadRect);
-                double brightness = meanBrightness(bgr, foreheadRect);
+                RoiStats roiStats = extractRoiStats(bgr, foreheadRect);
+                double avgG = roiStats.meanG();
+                double brightness = roiStats.meanBrightness();
+                double extractedSample = sanitizeSignalSample(
+                        extractorForMethod(extractors, activeMethod).extract(roiStats)
+                );
                 latestAvgG = avgG;
 
                 if (signalWindow == null && capturedFrames >= MIN_FRAMES_FOR_FPS_ESTIMATE) {
@@ -350,7 +418,7 @@ public final class RppgEngine {
 
                 if (signalWindow == null) {
                     latestBpmDecision = BpmStabilizer.Decision.invalid();
-                    warmupSamples.add(avgG);
+                    warmupSamples.add(extractedSample);
                     logCsv(csvLogger, Instant.now(), avgG, null, 0.0);
                     List<String> warnings = buildWarnings(false, 0.0, brightness, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
                     logWarningsAndDebug(
@@ -364,7 +432,18 @@ public final class RppgEngine {
                             BpmStatus.INVALID,
                             warningLogState
                     );
-                    publish(true, avgG, 0.0, 0.0, BpmStatus.INVALID, 0.0, measuredFps, 0.0, warnings);
+                    publish(
+                            true,
+                            avgG,
+                            0.0,
+                            0.0,
+                            BpmStatus.INVALID,
+                            activeMethod,
+                            0.0,
+                            measuredFps,
+                            0.0,
+                            warnings
+                    );
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(
                                 bgr,
@@ -374,6 +453,7 @@ public final class RppgEngine {
                                 0.0,
                                 0.0,
                                 BpmStatus.INVALID,
+                                activeMethod,
                                 0.0,
                                 measuredFps,
                                 0.0,
@@ -384,7 +464,7 @@ public final class RppgEngine {
                     continue;
                 }
 
-                signalWindow.add(avgG);
+                signalWindow.add(extractedSample);
                 fillPercent = computeFillPercent(signalWindow, signalWindowCapacity);
 
                 if (signalWindow.isFull()) {
@@ -423,6 +503,23 @@ public final class RppgEngine {
                                     result.reason()
                             );
                         }
+                        SignalMethod nextMethod = methodSelector.onBpmUpdate(
+                                config.signalMethod(),
+                                latestBpmDecision.status(),
+                                latestQuality,
+                                config.qualityThreshold(),
+                                estimateNowNs
+                        );
+                        if (nextMethod != activeMethod) {
+                            log.info("AUTO signal fallback: {} -> {}", activeMethod, nextMethod);
+                            activeMethod = nextMethod;
+                            resetExtractors(extractors);
+                            signalWindow = new SignalWindow(signalWindowCapacity);
+                            warmupSamples.clear();
+                            stabilizer.reset();
+                            latestBpmDecision = BpmStabilizer.Decision.invalid();
+                            latestQuality = 0.0;
+                        }
                         lastBpmUpdateNs = estimateNowNs;
                     }
                     logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), latestQuality);
@@ -458,6 +555,7 @@ public final class RppgEngine {
                         latestBpmDecision.bpm(),
                         latestBpmDecision.rawBpm(),
                         latestBpmDecision.status(),
+                        activeMethod,
                         latestQuality,
                         measuredFps,
                         fillPercent,
@@ -472,6 +570,7 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestBpmDecision.rawBpm(),
                             latestBpmDecision.status(),
+                            activeMethod,
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -487,13 +586,25 @@ public final class RppgEngine {
                     latestBpmDecision.bpm(),
                     latestBpmDecision.rawBpm(),
                     latestBpmDecision.status(),
+                    activeMethod,
                     latestQuality,
                     0.0,
                     0.0,
                     List.of()
             );
         } catch (Exception e) {
-            publish(false, 0.0, 0.0, 0.0, BpmStatus.INVALID, 0.0, 0.0, 0.0, List.of("ERROR_PROCESSING_FAILED"));
+            publish(
+                    false,
+                    0.0,
+                    0.0,
+                    0.0,
+                    BpmStatus.INVALID,
+                    initialActiveSignalMethod(config.signalMethod()),
+                    0.0,
+                    0.0,
+                    0.0,
+                    List.of("ERROR_PROCESSING_FAILED")
+            );
             log.warn("RppgEngine processing failed: {}", e.getMessage());
         } finally {
             if (csvLogger != null) {
@@ -561,6 +672,7 @@ public final class RppgEngine {
             double bpm,
             double rawBpm,
             BpmStatus bpmStatus,
+            SignalMethod signalMethod,
             double quality,
             double fps,
             double windowFill,
@@ -577,6 +689,7 @@ public final class RppgEngine {
                 round2(bpm),
                 roundOptional(rawBpm),
                 bpmStatus == null ? BpmStatus.INVALID : bpmStatus,
+                signalMethod == null ? SignalMethod.GREEN : signalMethod,
                 round3(quality),
                 round2(fps),
                 round1(windowFill),
@@ -657,6 +770,45 @@ public final class RppgEngine {
             return null;
         }
         return decision.bpm();
+    }
+
+    private static SignalMethod initialActiveSignalMethod(SignalMethod configuredMethod) {
+        if (configuredMethod == null || configuredMethod == SignalMethod.AUTO) {
+            return SignalMethod.POS;
+        }
+        return configuredMethod;
+    }
+
+    private static EnumMap<SignalMethod, RppgSignalExtractor> createExtractors(int temporalWindow) {
+        EnumMap<SignalMethod, RppgSignalExtractor> extractors = new EnumMap<>(SignalMethod.class);
+        extractors.put(SignalMethod.GREEN, new GreenExtractor());
+        extractors.put(SignalMethod.POS, new PosExtractor(temporalWindow));
+        extractors.put(SignalMethod.CHROM, new ChromExtractor(temporalWindow));
+        return extractors;
+    }
+
+    private static RppgSignalExtractor extractorForMethod(
+            EnumMap<SignalMethod, RppgSignalExtractor> extractors,
+            SignalMethod method
+    ) {
+        RppgSignalExtractor extractor = extractors.get(method);
+        if (extractor != null) {
+            return extractor;
+        }
+        return extractors.get(SignalMethod.GREEN);
+    }
+
+    private static void resetExtractors(EnumMap<SignalMethod, RppgSignalExtractor> extractors) {
+        for (RppgSignalExtractor extractor : extractors.values()) {
+            extractor.reset();
+        }
+    }
+
+    private static double sanitizeSignalSample(double sample) {
+        if (!Double.isFinite(sample)) {
+            return 0.0;
+        }
+        return sample;
     }
 
     private static double roundOptional(double value) {
@@ -751,16 +903,10 @@ public final class RppgEngine {
         return new FaceTracker.Rect(x, y, w, h);
     }
 
-    private static double averageGreenChannel(Mat bgrFrame, Rect roiRect) {
+    private static RoiStats extractRoiStats(Mat bgrFrame, Rect roiRect) {
         Mat roi = new Mat(bgrFrame, roiRect);
         Scalar channelMeans = mean(roi);
-        return channelMeans.get(1);
-    }
-
-    private static double meanBrightness(Mat bgrFrame, Rect roiRect) {
-        Mat roi = new Mat(bgrFrame, roiRect);
-        Scalar channelMeans = mean(roi);
-        return (channelMeans.get(0) + channelMeans.get(1) + channelMeans.get(2)) / 3.0;
+        return new RoiStats(channelMeans.get(2), channelMeans.get(1), channelMeans.get(0));
     }
 
     private static long computeJpegEncodeIntervalNs(double previewJpegFps) {
@@ -783,6 +929,7 @@ public final class RppgEngine {
             double bpm,
             double rawBpm,
             BpmStatus bpmStatus,
+            SignalMethod signalMethod,
             double quality,
             double fps,
             double windowFill,
@@ -805,7 +952,14 @@ public final class RppgEngine {
                     formatOptional(rawBpm),
                     quality
             );
-            String line2 = String.format(Locale.US, "FPS: %.1f  Fill: %.1f%%  avgG: %.1f", fps, windowFill, avgG);
+            String line2 = String.format(
+                    Locale.US,
+                    "FPS: %.1f  Fill: %.1f%%  avgG: %.1f  Method: %s",
+                    fps,
+                    windowFill,
+                    avgG,
+                    signalMethod
+            );
             String line3 = warnings == null || warnings.isEmpty() ? "Warnings: none" : "Warnings: " + String.join(", ", warnings);
             putText(view, line1, new Point(12, 24), FONT_HERSHEY_SIMPLEX, 0.6, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
             putText(view, line2, new Point(12, 48), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
