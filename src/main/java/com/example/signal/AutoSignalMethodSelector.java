@@ -5,36 +5,81 @@ public final class AutoSignalMethodSelector {
 
     private final long minHoldNs;
     private final int lowQualityLimitUpdates;
-    private final long cooldownNs;
+    private final long switchCooldownNs;
+    private final long recoveryCooldownNs;
+    private final long probeWindowNs;
+    private final double probeValidRatioThreshold;
+    private final double probeQualityMargin;
 
     private SignalMethod activeMethod = SignalMethod.POS;
-    private long badSinceNs = UNSET_NS;
-    private int consecutiveLowQualityUpdates = 0;
-    private long lastSwitchNs = UNSET_NS;
+    private AutoModeState modeState = AutoModeState.STABLE;
+    private SignalMethod probeCandidate;
+    private long probeEndNs = UNSET_NS;
+    private int probeUpdates;
+    private int probeValidUpdates;
+    private double probeQualitySum;
 
-    public AutoSignalMethodSelector(double minHoldSeconds, int lowQualityLimitUpdates, double cooldownSeconds) {
+    private long badSinceNs = UNSET_NS;
+    private int consecutiveLowQualityUpdates;
+    private long lastSwitchNs = UNSET_NS;
+    private long recoveryEligibleNs = 0L;
+
+    public AutoSignalMethodSelector(
+            double minHoldSeconds,
+            int lowQualityLimitUpdates,
+            double switchCooldownSeconds,
+            double recoveryCooldownSeconds,
+            double probeWindowSeconds,
+            double probeValidRatioThreshold,
+            double probeQualityMargin
+    ) {
         if (!Double.isFinite(minHoldSeconds) || minHoldSeconds < 0.0) {
             throw new IllegalArgumentException("minHoldSeconds must be >= 0");
         }
         if (lowQualityLimitUpdates < 1) {
             throw new IllegalArgumentException("lowQualityLimitUpdates must be >= 1");
         }
-        if (!Double.isFinite(cooldownSeconds) || cooldownSeconds < 0.0) {
-            throw new IllegalArgumentException("cooldownSeconds must be >= 0");
+        if (!Double.isFinite(switchCooldownSeconds) || switchCooldownSeconds < 0.0) {
+            throw new IllegalArgumentException("switchCooldownSeconds must be >= 0");
+        }
+        if (!Double.isFinite(recoveryCooldownSeconds) || recoveryCooldownSeconds < 0.0) {
+            throw new IllegalArgumentException("recoveryCooldownSeconds must be >= 0");
+        }
+        if (!Double.isFinite(probeWindowSeconds) || probeWindowSeconds <= 0.0) {
+            throw new IllegalArgumentException("probeWindowSeconds must be > 0");
+        }
+        if (!Double.isFinite(probeValidRatioThreshold)
+                || probeValidRatioThreshold < 0.0
+                || probeValidRatioThreshold > 1.0) {
+            throw new IllegalArgumentException("probeValidRatioThreshold must be within [0,1]");
+        }
+        if (!Double.isFinite(probeQualityMargin)) {
+            throw new IllegalArgumentException("probeQualityMargin must be finite");
         }
         this.minHoldNs = secondsToNs(minHoldSeconds);
         this.lowQualityLimitUpdates = lowQualityLimitUpdates;
-        this.cooldownNs = secondsToNs(cooldownSeconds);
+        this.switchCooldownNs = secondsToNs(switchCooldownSeconds);
+        this.recoveryCooldownNs = secondsToNs(recoveryCooldownSeconds);
+        this.probeWindowNs = secondsToNs(probeWindowSeconds);
+        this.probeValidRatioThreshold = probeValidRatioThreshold;
+        this.probeQualityMargin = probeQualityMargin;
     }
 
-    public SignalMethod current(SignalMethod configuredMethod) {
-        if (configuredMethod == null || configuredMethod == SignalMethod.AUTO) {
-            return activeMethod;
+    public Decision current(SignalMethod configuredMethod, long nowNs) {
+        if (configuredMethod != SignalMethod.AUTO) {
+            activeMethod = configuredMethod == null ? SignalMethod.GREEN : configuredMethod;
+            modeState = AutoModeState.STABLE;
+            clearProbe();
+            resetBadState();
+            return decision(false, false, nowNs);
         }
-        return configuredMethod;
+        if (modeState != AutoModeState.PROBING) {
+            modeState = activeMethod == SignalMethod.POS ? AutoModeState.STABLE : AutoModeState.FALLBACK;
+        }
+        return decision(false, false, nowNs);
     }
 
-    public SignalMethod onBpmUpdate(
+    public Decision onBpmUpdate(
             SignalMethod configuredMethod,
             BpmStatus bpmStatus,
             double quality,
@@ -42,11 +87,74 @@ public final class AutoSignalMethodSelector {
             long nowNs
     ) {
         if (configuredMethod != SignalMethod.AUTO) {
-            activeMethod = configuredMethod;
-            resetBadState();
-            return activeMethod;
+            return current(configuredMethod, nowNs);
         }
 
+        SignalMethod previousEffective = effectiveMethod();
+        boolean switched = false;
+
+        if (modeState == AutoModeState.PROBING) {
+            probeUpdates++;
+            if (bpmStatus == BpmStatus.VALID) {
+                probeValidUpdates++;
+            }
+            if (Double.isFinite(quality)) {
+                probeQualitySum += quality;
+            }
+            if (nowNs >= probeEndNs) {
+                boolean probeSucceeded = evaluateProbe(qualityThreshold);
+                if (probeSucceeded && probeCandidate != null) {
+                    activeMethod = probeCandidate;
+                    switched = true;
+                    lastSwitchNs = nowNs;
+                }
+                clearProbe();
+                modeState = activeMethod == SignalMethod.POS ? AutoModeState.STABLE : AutoModeState.FALLBACK;
+                recoveryEligibleNs = nowNs + recoveryCooldownNs;
+                resetBadState();
+            }
+        } else {
+            updateBadCounters(bpmStatus, quality, qualityThreshold, nowNs);
+
+            boolean holdExceeded = badSinceNs != UNSET_NS && nowNs - badSinceNs >= minHoldNs;
+            boolean qualityExceeded = consecutiveLowQualityUpdates >= lowQualityLimitUpdates;
+            boolean canSwitchDown = cooldownElapsed(nowNs);
+            if ((holdExceeded || qualityExceeded) && canSwitchDown && activeMethod != SignalMethod.GREEN) {
+                activeMethod = fallback(activeMethod);
+                switched = true;
+                lastSwitchNs = nowNs;
+                recoveryEligibleNs = nowNs + recoveryCooldownNs;
+                modeState = AutoModeState.FALLBACK;
+                resetBadState();
+            } else {
+                modeState = activeMethod == SignalMethod.POS ? AutoModeState.STABLE : AutoModeState.FALLBACK;
+            }
+
+            if (activeMethod != SignalMethod.POS
+                    && nowNs >= recoveryEligibleNs
+                    && cooldownElapsed(nowNs)) {
+                SignalMethod candidate = recoveryCandidate(activeMethod);
+                if (candidate != null && candidate != activeMethod) {
+                    startProbe(candidate, nowNs);
+                }
+            }
+        }
+
+        SignalMethod newEffective = effectiveMethod();
+        boolean resetRequired = previousEffective != newEffective;
+        return decision(switched, resetRequired, nowNs);
+    }
+
+    public void reset() {
+        activeMethod = SignalMethod.POS;
+        modeState = AutoModeState.STABLE;
+        clearProbe();
+        resetBadState();
+        lastSwitchNs = UNSET_NS;
+        recoveryEligibleNs = 0L;
+    }
+
+    private void updateBadCounters(BpmStatus bpmStatus, double quality, double qualityThreshold, long nowNs) {
         boolean badStatus = bpmStatus == BpmStatus.HOLDING || bpmStatus == BpmStatus.INVALID;
         if (badStatus) {
             if (badSinceNs == UNSET_NS) {
@@ -61,32 +169,49 @@ public final class AutoSignalMethodSelector {
         } else {
             consecutiveLowQualityUpdates = 0;
         }
-
-        boolean holdExceeded = badSinceNs != UNSET_NS && (nowNs - badSinceNs) >= minHoldNs;
-        boolean qualityExceeded = consecutiveLowQualityUpdates >= lowQualityLimitUpdates;
-        boolean cooldownElapsed = lastSwitchNs == UNSET_NS || (nowNs - lastSwitchNs) >= cooldownNs;
-
-        if ((holdExceeded || qualityExceeded) && cooldownElapsed) {
-            SignalMethod next = fallback(activeMethod);
-            if (next != activeMethod) {
-                activeMethod = next;
-                lastSwitchNs = nowNs;
-                resetBadState();
-            }
-        }
-
-        return activeMethod;
     }
 
-    public void reset() {
-        activeMethod = SignalMethod.POS;
-        lastSwitchNs = UNSET_NS;
+    private boolean evaluateProbe(double qualityThreshold) {
+        if (probeUpdates <= 0) {
+            return false;
+        }
+        double validRatio = (double) probeValidUpdates / (double) probeUpdates;
+        double avgQuality = probeQualitySum / (double) probeUpdates;
+        return validRatio >= probeValidRatioThreshold && avgQuality >= (qualityThreshold + probeQualityMargin);
+    }
+
+    private void startProbe(SignalMethod candidate, long nowNs) {
+        modeState = AutoModeState.PROBING;
+        probeCandidate = candidate;
+        probeEndNs = nowNs + probeWindowNs;
+        probeUpdates = 0;
+        probeValidUpdates = 0;
+        probeQualitySum = 0.0;
         resetBadState();
+    }
+
+    private void clearProbe() {
+        probeCandidate = null;
+        probeEndNs = UNSET_NS;
+        probeUpdates = 0;
+        probeValidUpdates = 0;
+        probeQualitySum = 0.0;
     }
 
     private void resetBadState() {
         badSinceNs = UNSET_NS;
         consecutiveLowQualityUpdates = 0;
+    }
+
+    private boolean cooldownElapsed(long nowNs) {
+        return lastSwitchNs == UNSET_NS || nowNs - lastSwitchNs >= switchCooldownNs;
+    }
+
+    private SignalMethod effectiveMethod() {
+        if (modeState == AutoModeState.PROBING && probeCandidate != null) {
+            return probeCandidate;
+        }
+        return activeMethod;
     }
 
     private static SignalMethod fallback(SignalMethod current) {
@@ -99,7 +224,44 @@ public final class AutoSignalMethodSelector {
         return SignalMethod.GREEN;
     }
 
+    private static SignalMethod recoveryCandidate(SignalMethod active) {
+        if (active == SignalMethod.GREEN) {
+            return SignalMethod.CHROM;
+        }
+        if (active == SignalMethod.CHROM) {
+            return SignalMethod.POS;
+        }
+        return null;
+    }
+
+    private Decision decision(boolean switched, boolean resetRequired, long nowNs) {
+        double remainingSeconds = 0.0;
+        if (modeState == AutoModeState.PROBING && probeEndNs != UNSET_NS) {
+            remainingSeconds = Math.max(0.0, (probeEndNs - nowNs) / 1_000_000_000.0);
+        }
+        return new Decision(
+                activeMethod,
+                effectiveMethod(),
+                modeState,
+                probeCandidate,
+                remainingSeconds,
+                switched,
+                resetRequired
+        );
+    }
+
     private static long secondsToNs(double seconds) {
         return (long) Math.max(0L, Math.round(seconds * 1_000_000_000.0));
+    }
+
+    public record Decision(
+            SignalMethod activeMethod,
+            SignalMethod effectiveMethod,
+            AutoModeState autoModeState,
+            SignalMethod probeCandidate,
+            double probeSecondsRemaining,
+            boolean switched,
+            boolean processingResetRequired
+    ) {
     }
 }

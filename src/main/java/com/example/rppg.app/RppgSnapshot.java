@@ -1,5 +1,6 @@
 package com.example.rppg.app;
 
+import com.example.signal.AutoModeState;
 import com.example.signal.BpmStatus;
 import com.example.signal.SignalMethod;
 
@@ -13,7 +14,10 @@ public record RppgSnapshot(
         double bpm,
         double rawBpm,
         BpmStatus bpmStatus,
-        SignalMethod signalMethod,
+        SignalMethod activeSignalMethod,
+        AutoModeState autoModeState,
+        SignalMethod probeCandidate,
+        double probeSecondsRemaining,
         double quality,
         double fps,
         double windowFill,
@@ -30,7 +34,10 @@ public record RppgSnapshot(
                 0.0,
                 0.0,
                 BpmStatus.INVALID,
-                SignalMethod.AUTO,
+                SignalMethod.POS,
+                AutoModeState.STABLE,
+                null,
+                0.0,
                 0.0,
                 0.0,
                 0.0,

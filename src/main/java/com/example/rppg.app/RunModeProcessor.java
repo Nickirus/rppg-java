@@ -35,8 +35,11 @@ public final class RunModeProcessor {
 
                 String line = String.format(
                         Locale.US,
-                        "method=%s, avgG=%.2f, windowFill=%.1f%%, bpm=%.1f, quality=%.3f, warnings=%s",
-                        snapshot.signalMethod(),
+                        "method=%s, autoState=%s, probe=%s(%.1fs), avgG=%.2f, windowFill=%.1f%%, bpm=%.1f, quality=%.3f, warnings=%s",
+                        snapshot.activeSignalMethod(),
+                        snapshot.autoModeState(),
+                        snapshot.probeCandidate() == null ? "none" : snapshot.probeCandidate().name(),
+                        snapshot.probeSecondsRemaining(),
                         snapshot.avgG(),
                         snapshot.windowFill(),
                         snapshot.bpm(),

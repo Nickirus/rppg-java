@@ -3,63 +3,141 @@ package com.example.signal;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AutoSignalMethodSelectorTest {
 
     @Test
-    void autoFallbackFollowsPosThenChromThenGreen() {
-        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(2.0, 10, 0.0);
+    void afterFallbackToGreen_probeStartsAfterRecoveryCooldown() {
+        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(
+                0.0,
+                1,
+                0.0,
+                20.0,
+                12.0,
+                0.6,
+                0.05
+        );
 
-        SignalMethod m0 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.8, 0.2, ns(0.0));
-        SignalMethod m1 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.8, 0.2, ns(1.0));
-        SignalMethod m2 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.8, 0.2, ns(2.1));
-        SignalMethod m3 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.8, 0.2, ns(3.0));
-        SignalMethod m4 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.8, 0.2, ns(4.3));
-        SignalMethod m5 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.8, 0.2, ns(5.2));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(0.0)); // POS -> CHROM
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(1.0)); // CHROM -> GREEN
 
-        assertEquals(SignalMethod.POS, m0);
-        assertEquals(SignalMethod.POS, m1);
-        assertEquals(SignalMethod.CHROM, m2);
-        assertEquals(SignalMethod.CHROM, m3);
-        assertEquals(SignalMethod.CHROM, m4);
-        assertEquals(SignalMethod.GREEN, m5);
+        AutoSignalMethodSelector.Decision beforeCooldown =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(10.0));
+        AutoSignalMethodSelector.Decision probeStarted =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(22.0));
+
+        assertEquals(SignalMethod.GREEN, beforeCooldown.activeMethod());
+        assertEquals(AutoModeState.FALLBACK, beforeCooldown.autoModeState());
+        assertEquals(SignalMethod.GREEN, beforeCooldown.effectiveMethod());
+
+        assertEquals(AutoModeState.PROBING, probeStarted.autoModeState());
+        assertEquals(SignalMethod.GREEN, probeStarted.activeMethod());
+        assertEquals(SignalMethod.CHROM, probeStarted.probeCandidate());
+        assertEquals(SignalMethod.CHROM, probeStarted.effectiveMethod());
+        assertTrue(probeStarted.processingResetRequired());
     }
 
     @Test
-    void cooldownPreventsRapidOscillation() {
-        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(1.0, 10, 5.0);
+    void successfulProbeSwitchesUpward() {
+        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(
+                0.0,
+                1,
+                0.0,
+                2.0,
+                4.0,
+                0.6,
+                0.0
+        );
 
-        SignalMethod m0 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.9, 0.2, ns(0.0));
-        SignalMethod m1 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.9, 0.2, ns(1.1));
-        SignalMethod m2 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.9, 0.2, ns(2.2));
-        SignalMethod m3 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.9, 0.2, ns(6.2));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(0.0)); // POS -> CHROM
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(1.0)); // CHROM -> GREEN
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(3.1));   // start probe CHROM
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(4.0));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(5.0));
+        AutoSignalMethodSelector.Decision completed =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(7.2));
 
-        assertEquals(SignalMethod.POS, m0);
-        assertEquals(SignalMethod.CHROM, m1);
-        assertEquals(SignalMethod.CHROM, m2);
-        assertEquals(SignalMethod.GREEN, m3);
+        assertEquals(SignalMethod.CHROM, completed.activeMethod());
+        assertEquals(SignalMethod.CHROM, completed.effectiveMethod());
+        assertEquals(AutoModeState.FALLBACK, completed.autoModeState());
+        assertNull(completed.probeCandidate());
+        assertFalse(completed.processingResetRequired());
     }
 
     @Test
-    void fixedMethodBypassesAutoFallback() {
-        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(0.0, 1, 0.0);
+    void failedProbeRevertsAndCooldownApplies() {
+        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(
+                0.0,
+                1,
+                0.0,
+                5.0,
+                4.0,
+                0.6,
+                0.05
+        );
 
-        SignalMethod m0 = selector.onBpmUpdate(SignalMethod.GREEN, BpmStatus.INVALID, 0.0, 0.2, ns(0.0));
-        SignalMethod m1 = selector.onBpmUpdate(SignalMethod.GREEN, BpmStatus.INVALID, 0.0, 0.2, ns(10.0));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(0.0)); // POS -> CHROM
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(1.0)); // CHROM -> GREEN
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(6.2));   // start probe CHROM
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.05, 0.2, ns(7.0));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.05, 0.2, ns(8.0));
+        AutoSignalMethodSelector.Decision failed =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.05, 0.2, ns(10.3));
 
-        assertEquals(SignalMethod.GREEN, m0);
-        assertEquals(SignalMethod.GREEN, m1);
+        AutoSignalMethodSelector.Decision stillCooling =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.5, 0.2, ns(12.0));
+        AutoSignalMethodSelector.Decision probeAgain =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.5, 0.2, ns(15.4));
+
+        assertEquals(SignalMethod.GREEN, failed.activeMethod());
+        assertEquals(AutoModeState.FALLBACK, failed.autoModeState());
+        assertNull(failed.probeCandidate());
+
+        assertEquals(AutoModeState.FALLBACK, stillCooling.autoModeState());
+        assertEquals(SignalMethod.GREEN, stillCooling.effectiveMethod());
+        assertEquals(AutoModeState.PROBING, probeAgain.autoModeState());
+        assertEquals(SignalMethod.CHROM, probeAgain.probeCandidate());
     }
 
     @Test
-    void lowQualityFallbackWorksEvenWithValidStatus() {
-        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(30.0, 2, 0.0);
+    void noOscillationOnAlternatingQualitySignals() {
+        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(
+                0.0,
+                1,
+                5.0,
+                20.0,
+                12.0,
+                0.6,
+                0.05
+        );
 
-        SignalMethod m0 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.05, 0.2, ns(0.0));
-        SignalMethod m1 = selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.07, 0.2, ns(1.0));
+        AutoSignalMethodSelector.Decision d0 =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(0.0)); // POS -> CHROM
+        AutoSignalMethodSelector.Decision d1 =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(1.0));
+        AutoSignalMethodSelector.Decision d2 =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(2.0));
+        AutoSignalMethodSelector.Decision d3 =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.5, 0.2, ns(3.0));
+        AutoSignalMethodSelector.Decision d4 =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(6.1)); // CHROM -> GREEN
+        AutoSignalMethodSelector.Decision d5 =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.6, 0.2, ns(7.0));
+        AutoSignalMethodSelector.Decision d6 =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(8.0));
 
-        assertEquals(SignalMethod.POS, m0);
-        assertEquals(SignalMethod.CHROM, m1);
+        assertEquals(SignalMethod.CHROM, d0.activeMethod());
+        assertEquals(SignalMethod.CHROM, d1.activeMethod());
+        assertEquals(SignalMethod.CHROM, d2.activeMethod());
+        assertEquals(SignalMethod.CHROM, d3.activeMethod());
+        assertEquals(SignalMethod.GREEN, d4.activeMethod());
+        assertEquals(SignalMethod.GREEN, d5.activeMethod());
+        assertEquals(SignalMethod.GREEN, d6.activeMethod());
+        assertEquals(AutoModeState.FALLBACK, d6.autoModeState());
+        assertNull(d6.probeCandidate());
     }
 
     private static long ns(double seconds) {

@@ -2,6 +2,7 @@ package com.example.rppg.app;
 
 import com.example.rppg.vision.FaceTracker;
 import com.example.rppg.vision.RoiSelector;
+import com.example.signal.AutoModeState;
 import com.example.signal.AutoSignalMethodSelector;
 import com.example.signal.BpmStabilizer;
 import com.example.signal.BpmStatus;
@@ -99,6 +100,9 @@ public final class RppgEngine {
                     0.0,
                     BpmStatus.INVALID,
                     initialActiveSignalMethod(config.signalMethod()),
+                    AutoModeState.STABLE,
+                    null,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -149,6 +153,9 @@ public final class RppgEngine {
                 0.0,
                 BpmStatus.INVALID,
                 initialActiveSignalMethod(config.signalMethod()),
+                AutoModeState.STABLE,
+                null,
+                0.0,
                 0.0,
                 0.0,
                 0.0,
@@ -183,6 +190,9 @@ public final class RppgEngine {
                     0.0,
                     BpmStatus.INVALID,
                     initialActiveSignalMethod(config.signalMethod()),
+                    AutoModeState.STABLE,
+                    null,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -201,6 +211,9 @@ public final class RppgEngine {
                     0.0,
                     BpmStatus.INVALID,
                     initialActiveSignalMethod(config.signalMethod()),
+                    AutoModeState.STABLE,
+                    null,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -226,6 +239,9 @@ public final class RppgEngine {
                     0.0,
                     BpmStatus.INVALID,
                     initialActiveSignalMethod(config.signalMethod()),
+                    AutoModeState.STABLE,
+                    null,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -258,9 +274,14 @@ public final class RppgEngine {
             AutoSignalMethodSelector methodSelector = new AutoSignalMethodSelector(
                     config.autoFallbackMinHoldSeconds(),
                     config.autoLowQualityUpdatesThreshold(),
-                    config.autoSwitchCooldownSeconds()
+                    config.autoSwitchCooldownSeconds(),
+                    config.autoRecoveryCooldownSeconds(),
+                    config.autoProbeWindowSeconds(),
+                    config.autoProbeValidRatioThreshold(),
+                    config.autoProbeQualityMargin()
             );
-            SignalMethod activeMethod = methodSelector.current(config.signalMethod());
+            AutoSignalMethodSelector.Decision autoDecision =
+                    methodSelector.current(config.signalMethod(), System.nanoTime());
             BpmStabilizer stabilizer = new BpmStabilizer(config.maxStepPerUpdateBpm());
             BpmStabilizer.Decision latestBpmDecision = BpmStabilizer.Decision.invalid();
             double latestQuality = 0.0;
@@ -284,6 +305,7 @@ public final class RppgEngine {
                 capturedFrames++;
                 double elapsedSeconds = (nowNs - startedNs) / 1_000_000_000.0;
                 double measuredFps = elapsedSeconds > 0.0 ? capturedFrames / elapsedSeconds : config.targetFps();
+                autoDecision = methodSelector.current(config.signalMethod(), nowNs);
 
                 if (capturedFrames % DETECT_EVERY_N_FRAMES == 0 || lastFace == null) {
                     Rect detectedFace = detectLargestFace(classifier, bgr);
@@ -319,7 +341,10 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestBpmDecision.rawBpm(),
                             latestBpmDecision.status(),
-                            activeMethod,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            autoDecision.probeCandidate(),
+                            autoDecision.probeSecondsRemaining(),
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -334,7 +359,10 @@ public final class RppgEngine {
                                 latestBpmDecision.bpm(),
                                 latestBpmDecision.rawBpm(),
                                 latestBpmDecision.status(),
-                                activeMethod,
+                                autoDecision.activeMethod(),
+                                autoDecision.autoModeState(),
+                                autoDecision.probeCandidate(),
+                                autoDecision.probeSecondsRemaining(),
                                 latestQuality,
                                 measuredFps,
                                 fillPercent,
@@ -366,7 +394,10 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestBpmDecision.rawBpm(),
                             latestBpmDecision.status(),
-                            activeMethod,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            autoDecision.probeCandidate(),
+                            autoDecision.probeSecondsRemaining(),
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -381,7 +412,10 @@ public final class RppgEngine {
                                 latestBpmDecision.bpm(),
                                 latestBpmDecision.rawBpm(),
                                 latestBpmDecision.status(),
-                                activeMethod,
+                                autoDecision.activeMethod(),
+                                autoDecision.autoModeState(),
+                                autoDecision.probeCandidate(),
+                                autoDecision.probeSecondsRemaining(),
                                 latestQuality,
                                 measuredFps,
                                 fillPercent,
@@ -396,7 +430,7 @@ public final class RppgEngine {
                 double avgG = roiStats.meanG();
                 double brightness = roiStats.meanBrightness();
                 double extractedSample = sanitizeSignalSample(
-                        extractorForMethod(extractors, activeMethod).extract(roiStats)
+                        extractorForMethod(extractors, autoDecision.effectiveMethod()).extract(roiStats)
                 );
                 latestAvgG = avgG;
 
@@ -438,7 +472,10 @@ public final class RppgEngine {
                             0.0,
                             0.0,
                             BpmStatus.INVALID,
-                            activeMethod,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            autoDecision.probeCandidate(),
+                            autoDecision.probeSecondsRemaining(),
                             0.0,
                             measuredFps,
                             0.0,
@@ -453,7 +490,10 @@ public final class RppgEngine {
                                 0.0,
                                 0.0,
                                 BpmStatus.INVALID,
-                                activeMethod,
+                                autoDecision.activeMethod(),
+                                autoDecision.autoModeState(),
+                                autoDecision.probeCandidate(),
+                                autoDecision.probeSecondsRemaining(),
                                 0.0,
                                 measuredFps,
                                 0.0,
@@ -503,16 +543,21 @@ public final class RppgEngine {
                                     result.reason()
                             );
                         }
-                        SignalMethod nextMethod = methodSelector.onBpmUpdate(
+                        AutoSignalMethodSelector.Decision nextDecision = methodSelector.onBpmUpdate(
                                 config.signalMethod(),
                                 latestBpmDecision.status(),
                                 latestQuality,
                                 config.qualityThreshold(),
                                 estimateNowNs
                         );
-                        if (nextMethod != activeMethod) {
-                            log.info("AUTO signal fallback: {} -> {}", activeMethod, nextMethod);
-                            activeMethod = nextMethod;
+                        if (nextDecision.processingResetRequired()) {
+                            log.info(
+                                    "AUTO method transition: active={} effective={} state={} candidate={}",
+                                    nextDecision.activeMethod(),
+                                    nextDecision.effectiveMethod(),
+                                    nextDecision.autoModeState(),
+                                    nextDecision.probeCandidate()
+                            );
                             resetExtractors(extractors);
                             signalWindow = new SignalWindow(signalWindowCapacity);
                             warmupSamples.clear();
@@ -520,6 +565,7 @@ public final class RppgEngine {
                             latestBpmDecision = BpmStabilizer.Decision.invalid();
                             latestQuality = 0.0;
                         }
+                        autoDecision = nextDecision;
                         lastBpmUpdateNs = estimateNowNs;
                     }
                     logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), latestQuality);
@@ -555,7 +601,10 @@ public final class RppgEngine {
                         latestBpmDecision.bpm(),
                         latestBpmDecision.rawBpm(),
                         latestBpmDecision.status(),
-                        activeMethod,
+                        autoDecision.activeMethod(),
+                        autoDecision.autoModeState(),
+                        autoDecision.probeCandidate(),
+                        autoDecision.probeSecondsRemaining(),
                         latestQuality,
                         measuredFps,
                         fillPercent,
@@ -570,7 +619,10 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestBpmDecision.rawBpm(),
                             latestBpmDecision.status(),
-                            activeMethod,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            autoDecision.probeCandidate(),
+                            autoDecision.probeSecondsRemaining(),
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -586,7 +638,10 @@ public final class RppgEngine {
                     latestBpmDecision.bpm(),
                     latestBpmDecision.rawBpm(),
                     latestBpmDecision.status(),
-                    activeMethod,
+                    autoDecision.activeMethod(),
+                    autoDecision.autoModeState(),
+                    autoDecision.probeCandidate(),
+                    autoDecision.probeSecondsRemaining(),
                     latestQuality,
                     0.0,
                     0.0,
@@ -600,6 +655,9 @@ public final class RppgEngine {
                     0.0,
                     BpmStatus.INVALID,
                     initialActiveSignalMethod(config.signalMethod()),
+                    AutoModeState.STABLE,
+                    null,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -672,7 +730,10 @@ public final class RppgEngine {
             double bpm,
             double rawBpm,
             BpmStatus bpmStatus,
-            SignalMethod signalMethod,
+            SignalMethod activeSignalMethod,
+            AutoModeState autoModeState,
+            SignalMethod probeCandidate,
+            double probeSecondsRemaining,
             double quality,
             double fps,
             double windowFill,
@@ -689,7 +750,10 @@ public final class RppgEngine {
                 round2(bpm),
                 roundOptional(rawBpm),
                 bpmStatus == null ? BpmStatus.INVALID : bpmStatus,
-                signalMethod == null ? SignalMethod.GREEN : signalMethod,
+                activeSignalMethod == null ? SignalMethod.GREEN : activeSignalMethod,
+                autoModeState == null ? AutoModeState.STABLE : autoModeState,
+                probeCandidate,
+                round1(Math.max(0.0, probeSecondsRemaining)),
                 round3(quality),
                 round2(fps),
                 round1(windowFill),
@@ -929,7 +993,10 @@ public final class RppgEngine {
             double bpm,
             double rawBpm,
             BpmStatus bpmStatus,
-            SignalMethod signalMethod,
+            SignalMethod activeSignalMethod,
+            AutoModeState autoModeState,
+            SignalMethod probeCandidate,
+            double probeSecondsRemaining,
             double quality,
             double fps,
             double windowFill,
@@ -958,12 +1025,20 @@ public final class RppgEngine {
                     fps,
                     windowFill,
                     avgG,
-                    signalMethod
+                    activeSignalMethod
             );
-            String line3 = warnings == null || warnings.isEmpty() ? "Warnings: none" : "Warnings: " + String.join(", ", warnings);
+            String line3 = String.format(
+                    Locale.US,
+                    "Auto: %s  Probe: %s (%.1fs)",
+                    autoModeState,
+                    probeCandidate == null ? "none" : probeCandidate.name(),
+                    Math.max(0.0, probeSecondsRemaining)
+            );
+            String line4 = warnings == null || warnings.isEmpty() ? "Warnings: none" : "Warnings: " + String.join(", ", warnings);
             putText(view, line1, new Point(12, 24), FONT_HERSHEY_SIMPLEX, 0.6, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
             putText(view, line2, new Point(12, 48), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
             putText(view, line3, new Point(12, 72), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 200, 255, 0), 2, LINE_AA, false);
+            putText(view, line4, new Point(12, 96), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 200, 255, 0), 2, LINE_AA, false);
 
             BytePointer encoded = new BytePointer();
             try {
