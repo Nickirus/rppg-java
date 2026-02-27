@@ -131,6 +131,9 @@ public final class AutoSignalMethodSelector {
             }
 
             if (activeMethod != SignalMethod.POS
+                    && bpmStatus == BpmStatus.VALID
+                    && Double.isFinite(quality)
+                    && quality >= qualityThreshold
                     && nowNs >= recoveryEligibleNs
                     && cooldownElapsed(nowNs)) {
                 SignalMethod candidate = recoveryCandidate(activeMethod);

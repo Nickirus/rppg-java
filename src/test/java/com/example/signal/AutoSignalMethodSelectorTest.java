@@ -140,6 +140,46 @@ class AutoSignalMethodSelectorTest {
         assertNull(d6.probeCandidate());
     }
 
+    @Test
+    void afterChromRecoverySuccess_laterPosProbeCanSucceed() {
+        AutoSignalMethodSelector selector = new AutoSignalMethodSelector(
+                0.0,
+                1,
+                0.0,
+                2.0,
+                4.0,
+                0.6,
+                0.0
+        );
+
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(0.0)); // POS -> CHROM
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.INVALID, 0.0, 0.2, ns(1.0)); // CHROM -> GREEN
+
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(3.2)); // start probe CHROM
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(4.0));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(5.0));
+        AutoSignalMethodSelector.Decision chromRecovered =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(7.3));
+
+        AutoSignalMethodSelector.Decision posProbeStart =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(9.4));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(10.5));
+        selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(11.5));
+        AutoSignalMethodSelector.Decision posRecovered =
+                selector.onBpmUpdate(SignalMethod.AUTO, BpmStatus.VALID, 0.4, 0.2, ns(13.6));
+
+        assertEquals(SignalMethod.CHROM, chromRecovered.activeMethod());
+        assertEquals(AutoModeState.FALLBACK, chromRecovered.autoModeState());
+
+        assertEquals(AutoModeState.PROBING, posProbeStart.autoModeState());
+        assertEquals(SignalMethod.POS, posProbeStart.probeCandidate());
+        assertEquals(SignalMethod.POS, posProbeStart.effectiveMethod());
+
+        assertEquals(SignalMethod.POS, posRecovered.activeMethod());
+        assertEquals(AutoModeState.STABLE, posRecovered.autoModeState());
+        assertNull(posRecovered.probeCandidate());
+    }
+
     private static long ns(double seconds) {
         return (long) Math.round(seconds * 1_000_000_000.0);
     }
