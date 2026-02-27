@@ -32,6 +32,7 @@ public class HeartRateEstimator {
         }
 
         double[] x = Preprocessor.detrendAndNormalize(rawSignal);
+        x = Preprocessor.bandPass(x, fsHz, minHz, maxHz);
         double signalEnergy = 0.0;
         for (double v : x) {
             signalEnergy += v * v;

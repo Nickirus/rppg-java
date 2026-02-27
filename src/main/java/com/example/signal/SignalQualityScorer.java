@@ -20,6 +20,7 @@ public final class SignalQualityScorer {
         }
 
         double[] x = Preprocessor.detrendAndNormalize(rawSignal);
+        x = Preprocessor.bandPass(x, fsHz, minHz, maxHz);
         Preprocessor.applyHannWindowInPlace(x);
         double[] power = FftPowerSpectrum.powerSpectrum(x);
 
