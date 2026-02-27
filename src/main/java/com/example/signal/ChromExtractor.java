@@ -17,11 +17,6 @@ public final class ChromExtractor implements RppgSignalExtractor {
     }
 
     @Override
-    public SignalMethod method() {
-        return SignalMethod.CHROM;
-    }
-
-    @Override
     public double extract(RoiStats roiStats) {
         if (window.size() == temporalWindow) {
             window.removeFirst();

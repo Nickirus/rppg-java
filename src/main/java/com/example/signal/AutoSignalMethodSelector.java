@@ -71,12 +71,12 @@ public final class AutoSignalMethodSelector {
             modeState = AutoModeState.STABLE;
             clearProbe();
             resetBadState();
-            return decision(false, false, nowNs);
+            return decision(false, nowNs);
         }
         if (modeState != AutoModeState.PROBING) {
             modeState = activeMethod == SignalMethod.POS ? AutoModeState.STABLE : AutoModeState.FALLBACK;
         }
-        return decision(false, false, nowNs);
+        return decision(false, nowNs);
     }
 
     public Decision onBpmUpdate(
@@ -91,8 +91,6 @@ public final class AutoSignalMethodSelector {
         }
 
         SignalMethod previousEffective = effectiveMethod();
-        boolean switched = false;
-
         if (modeState == AutoModeState.PROBING) {
             probeUpdates++;
             if (bpmStatus == BpmStatus.VALID) {
@@ -105,7 +103,6 @@ public final class AutoSignalMethodSelector {
                 boolean probeSucceeded = evaluateProbe(qualityThreshold);
                 if (probeSucceeded && probeCandidate != null) {
                     activeMethod = probeCandidate;
-                    switched = true;
                     lastSwitchNs = nowNs;
                 }
                 clearProbe();
@@ -121,7 +118,6 @@ public final class AutoSignalMethodSelector {
             boolean canSwitchDown = cooldownElapsed(nowNs);
             if ((holdExceeded || qualityExceeded) && canSwitchDown && activeMethod != SignalMethod.GREEN) {
                 activeMethod = fallback(activeMethod);
-                switched = true;
                 lastSwitchNs = nowNs;
                 recoveryEligibleNs = nowNs + recoveryCooldownNs;
                 modeState = AutoModeState.FALLBACK;
@@ -145,7 +141,7 @@ public final class AutoSignalMethodSelector {
 
         SignalMethod newEffective = effectiveMethod();
         boolean resetRequired = previousEffective != newEffective;
-        return decision(switched, resetRequired, nowNs);
+        return decision(resetRequired, nowNs);
     }
 
     public void reset() {
@@ -237,7 +233,7 @@ public final class AutoSignalMethodSelector {
         return null;
     }
 
-    private Decision decision(boolean switched, boolean resetRequired, long nowNs) {
+    private Decision decision(boolean resetRequired, long nowNs) {
         double remainingSeconds = 0.0;
         if (modeState == AutoModeState.PROBING && probeEndNs != UNSET_NS) {
             remainingSeconds = Math.max(0.0, (probeEndNs - nowNs) / 1_000_000_000.0);
@@ -248,7 +244,6 @@ public final class AutoSignalMethodSelector {
                 modeState,
                 probeCandidate,
                 remainingSeconds,
-                switched,
                 resetRequired
         );
     }
@@ -263,7 +258,6 @@ public final class AutoSignalMethodSelector {
             AutoModeState autoModeState,
             SignalMethod probeCandidate,
             double probeSecondsRemaining,
-            boolean switched,
             boolean processingResetRequired
     ) {
     }

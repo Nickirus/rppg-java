@@ -17,11 +17,6 @@ public final class PosExtractor implements RppgSignalExtractor {
     }
 
     @Override
-    public SignalMethod method() {
-        return SignalMethod.POS;
-    }
-
-    @Override
     public double extract(RoiStats roiStats) {
         if (window.size() == temporalWindow) {
             window.removeFirst();
