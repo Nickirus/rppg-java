@@ -30,8 +30,9 @@ public record Config(
         double autoProbeQualityMargin,
         double noFaceWarningSeconds,
         double lowLightBrightnessThreshold,
-        double motionCenterThreshold,
-        double motionAreaChangeThreshold
+        double motionThreshold,
+        long motionFreezeMinMs,
+        long motionResetAfterMs
 ) {
     public static Config defaults() {
         return new Config(
@@ -61,8 +62,9 @@ public record Config(
                 0.0,
                 2.0,
                 45.0,
-                0.08,
-                0.25
+                0.10,
+                300L,
+                3000L
         );
     }
 
@@ -94,8 +96,9 @@ public record Config(
                 autoProbeQualityMargin,
                 noFaceWarningSeconds,
                 lowLightBrightnessThreshold,
-                motionCenterThreshold,
-                motionAreaChangeThreshold
+                motionThreshold,
+                motionFreezeMinMs,
+                motionResetAfterMs
         );
     }
 }

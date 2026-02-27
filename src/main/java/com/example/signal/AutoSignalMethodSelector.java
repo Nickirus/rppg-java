@@ -153,6 +153,14 @@ public final class AutoSignalMethodSelector {
         recoveryEligibleNs = 0L;
     }
 
+    public void resetTimers(long nowNs) {
+        clearProbe();
+        resetBadState();
+        modeState = activeMethod == SignalMethod.POS ? AutoModeState.STABLE : AutoModeState.FALLBACK;
+        lastSwitchNs = nowNs;
+        recoveryEligibleNs = nowNs + recoveryCooldownNs;
+    }
+
     private void updateBadCounters(BpmStatus bpmStatus, double quality, double qualityThreshold, long nowNs) {
         boolean badStatus = bpmStatus == BpmStatus.HOLDING || bpmStatus == BpmStatus.INVALID;
         if (badStatus) {

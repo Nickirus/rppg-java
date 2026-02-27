@@ -70,6 +70,8 @@ public class WebUiController {
                     <div class="card"><div class="label">Auto State</div><div id="autoModeState" class="value">--</div></div>
                     <div class="card"><div class="label">Probe Candidate</div><div id="probeCandidate" class="value">--</div></div>
                     <div class="card"><div class="label">Probe Remaining</div><div id="probeSecondsRemaining" class="value">0.0s</div></div>
+                    <div class="card"><div class="label">Processing</div><div id="processingStatus" class="value">NORMAL</div></div>
+                    <div class="card"><div class="label">Motion Score</div><div id="motionScore" class="value">0.000</div></div>
                     <div class="card"><div class="label">ROI Mode</div><div id="roiMode" class="value">--</div></div>
                     <div class="card"><div class="label">ROI Weights</div><div id="roiWeights" class="small">--</div></div>
                     <div class="card"><div class="label">Quality</div><div id="quality" class="value">--</div></div>
@@ -374,6 +376,8 @@ public class WebUiController {
                       const autoModeState = data && typeof data.autoModeState === 'string' ? data.autoModeState : '--';
                       const probeCandidate = data && typeof data.probeCandidate === 'string' ? data.probeCandidate : '--';
                       const probeSecondsRemaining = data && typeof data.probeSecondsRemaining === 'number' ? data.probeSecondsRemaining : 0.0;
+                      const processingStatus = data && typeof data.processingStatus === 'string' ? data.processingStatus : 'NORMAL';
+                      const motionScore = data && typeof data.motionScore === 'number' ? data.motionScore : 0.0;
                       const roiMode = data && typeof data.roiMode === 'string' ? data.roiMode : '--';
                       const roiWeights = data && Array.isArray(data.roiWeights)
                         ? data.roiWeights.map((v) => Number(v).toFixed(2)).join(' / ')
@@ -384,6 +388,8 @@ public class WebUiController {
                       document.getElementById('autoModeState').textContent = autoModeState;
                       document.getElementById('probeCandidate').textContent = probeCandidate;
                       document.getElementById('probeSecondsRemaining').textContent = probeSecondsRemaining.toFixed(1) + 's';
+                      document.getElementById('processingStatus').textContent = processingStatus;
+                      document.getElementById('motionScore').textContent = motionScore.toFixed(3);
                       document.getElementById('roiMode').textContent = roiMode;
                       document.getElementById('roiWeights').textContent = roiWeights;
                       document.getElementById('quality').textContent = data.quality.toFixed(3);

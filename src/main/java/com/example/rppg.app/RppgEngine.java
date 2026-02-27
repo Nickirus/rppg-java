@@ -60,12 +60,11 @@ import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 @Slf4j
 @RequiredArgsConstructor
 public final class RppgEngine {
-    private static final int DETECT_EVERY_N_FRAMES = 3;
+    private static final int DETECT_EVERY_N_FRAMES = 1;
     private static final int MIN_FRAMES_FOR_FPS_ESTIMATE = 15;
     private static final long BPM_UPDATE_INTERVAL_NS = 2_000_000_000L;
     private static final long WARNING_LOG_INTERVAL_NS = 2_000_000_000L;
     private static final long DEBUG_FRAME_LOG_INTERVAL_NS = 2_000_000_000L;
-    private static final long MOTION_WARNING_HOLD_NS = 1_000_000_000L;
     private static final String WARNING_NO_FACE = "NO_FACE";
     private static final String WARNING_LOW_QUALITY = "LOW_QUALITY";
     private static final String WARNING_LOW_LIGHT = "LOW_LIGHT";
@@ -103,6 +102,8 @@ public final class RppgEngine {
                     initialActiveSignalMethod(config.signalMethod()),
                     AutoModeState.STABLE,
                     null,
+                    0.0,
+                    ProcessingStatus.NORMAL,
                     0.0,
                     0.0,
                     0.0,
@@ -157,6 +158,8 @@ public final class RppgEngine {
                 AutoModeState.STABLE,
                 null,
                 0.0,
+                ProcessingStatus.NORMAL,
+                0.0,
                 config.roiMode(),
                 snapshotRoiWeights(),
                 0.0,
@@ -196,6 +199,8 @@ public final class RppgEngine {
                     AutoModeState.STABLE,
                     null,
                     0.0,
+                    ProcessingStatus.NORMAL,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -216,6 +221,8 @@ public final class RppgEngine {
                     initialActiveSignalMethod(config.signalMethod()),
                     AutoModeState.STABLE,
                     null,
+                    0.0,
+                    ProcessingStatus.NORMAL,
                     0.0,
                     0.0,
                     0.0,
@@ -245,6 +252,8 @@ public final class RppgEngine {
                     AutoModeState.STABLE,
                     null,
                     0.0,
+                    ProcessingStatus.NORMAL,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -263,9 +272,12 @@ public final class RppgEngine {
             long startedNs = System.nanoTime();
             int capturedFrames = 0;
             Rect lastFace = null;
-            Rect lastDetectedFace = null;
             long lastFaceDetectedNs = startedNs;
-            long lastMotionDetectedNs = Long.MIN_VALUE;
+            MotionGate motionGate = new MotionGate(
+                    config.motionThreshold(),
+                    config.motionFreezeMinMs(),
+                    config.motionResetAfterMs()
+            );
             SignalWindow signalWindow = null;
             int signalWindowCapacity = -1;
             HeartRateEstimator estimator = null;
@@ -289,6 +301,8 @@ public final class RppgEngine {
             BpmStabilizer.Decision latestBpmDecision = BpmStabilizer.Decision.invalid();
             double latestQuality = 0.0;
             double latestAvgG = 0.0;
+            double latestMotionScore = 0.0;
+            ProcessingStatus latestProcessingStatus = ProcessingStatus.NORMAL;
             WarningLogState warningLogState = new WarningLogState();
 
             log.info("Engine loop started. sessionCsv={}", config.csvPath());
@@ -315,18 +329,44 @@ public final class RppgEngine {
                     if (detectedFace != null) {
                         lastFace = detectedFace;
                         lastFaceDetectedNs = nowNs;
-                        if (isTooMuchMotion(lastDetectedFace, detectedFace, bgr.cols(), bgr.rows())) {
-                            lastMotionDetectedNs = nowNs;
-                        }
-                        lastDetectedFace = detectedFace;
                     } else {
                         lastFace = null;
                     }
                 }
 
+                FaceTracker.Rect motionFace = lastFace == null
+                        ? null
+                        : new FaceTracker.Rect(lastFace.x(), lastFace.y(), lastFace.width(), lastFace.height());
+                MotionGate.State motionState = motionGate.update(motionFace, nowNs);
+                latestMotionScore = motionState.motionScore();
+                latestProcessingStatus = motionState.frozen() ? ProcessingStatus.MOTION_FREEZE : ProcessingStatus.NORMAL;
+                if (motionState.shouldResetWindow()) {
+                    if (signalWindow != null && signalWindowCapacity > 0) {
+                        signalWindow = new SignalWindow(signalWindowCapacity);
+                    }
+                    warmupSamples.clear();
+                    latestQuality = 0.0;
+                    latestBpmDecision = stabilizer.holdCurrent();
+                    lastBpmUpdateNs = Long.MIN_VALUE;
+                    methodSelector.resetTimers(nowNs);
+                    autoDecision = methodSelector.current(config.signalMethod(), nowNs);
+                    log.info(
+                            "Motion freeze reset triggered after {} ms, status={}",
+                            config.motionResetAfterMs(),
+                            latestBpmDecision.status()
+                    );
+                }
+
                 double fillPercent = computeFillPercent(signalWindow, signalWindowCapacity);
                 if (lastFace == null) {
-                    List<String> warnings = buildWarnings(false, latestQuality, null, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
+                    List<String> warnings = buildWarnings(
+                            false,
+                            latestQuality,
+                            null,
+                            nowNs,
+                            lastFaceDetectedNs,
+                            latestProcessingStatus
+                    );
                     logWarningsAndDebug(
                             warnings,
                             nowNs,
@@ -336,6 +376,8 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestQuality,
                             latestBpmDecision.status(),
+                            latestProcessingStatus,
+                            latestMotionScore,
                             warningLogState
                     );
                     publish(
@@ -348,6 +390,8 @@ public final class RppgEngine {
                             autoDecision.autoModeState(),
                             autoDecision.probeCandidate(),
                             autoDecision.probeSecondsRemaining(),
+                            latestProcessingStatus,
+                            latestMotionScore,
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -368,6 +412,8 @@ public final class RppgEngine {
                                 autoDecision.autoModeState(),
                                 autoDecision.probeCandidate(),
                                 autoDecision.probeSecondsRemaining(),
+                                latestProcessingStatus,
+                                latestMotionScore,
                                 latestQuality,
                                 measuredFps,
                                 fillPercent,
@@ -380,7 +426,14 @@ public final class RppgEngine {
 
                 FrameRois frameRois = roiRectsForFace(lastFace, bgr.cols(), bgr.rows(), config.roiMode());
                 if (!frameRois.isUsable(config.roiMode())) {
-                    List<String> warnings = buildWarnings(false, latestQuality, null, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
+                    List<String> warnings = buildWarnings(
+                            false,
+                            latestQuality,
+                            null,
+                            nowNs,
+                            lastFaceDetectedNs,
+                            latestProcessingStatus
+                    );
                     logWarningsAndDebug(
                             warnings,
                             nowNs,
@@ -390,6 +443,8 @@ public final class RppgEngine {
                             latestBpmDecision.bpm(),
                             latestQuality,
                             latestBpmDecision.status(),
+                            latestProcessingStatus,
+                            latestMotionScore,
                             warningLogState
                     );
                     publish(
@@ -402,6 +457,8 @@ public final class RppgEngine {
                             autoDecision.autoModeState(),
                             autoDecision.probeCandidate(),
                             autoDecision.probeSecondsRemaining(),
+                            latestProcessingStatus,
+                            latestMotionScore,
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -422,6 +479,8 @@ public final class RppgEngine {
                                 autoDecision.autoModeState(),
                                 autoDecision.probeCandidate(),
                                 autoDecision.probeSecondsRemaining(),
+                                latestProcessingStatus,
+                                latestMotionScore,
                                 latestQuality,
                                 measuredFps,
                                 fillPercent,
@@ -464,10 +523,21 @@ public final class RppgEngine {
                 }
 
                 if (signalWindow == null) {
-                    latestBpmDecision = BpmStabilizer.Decision.invalid();
-                    warmupSamples.add(extractedSample);
-                    logCsv(csvLogger, Instant.now(), avgG, null, 0.0);
-                    List<String> warnings = buildWarnings(false, 0.0, brightness, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
+                    latestBpmDecision = motionState.frozen()
+                            ? stabilizer.holdCurrent()
+                            : BpmStabilizer.Decision.invalid();
+                    if (!motionState.frozen()) {
+                        warmupSamples.add(extractedSample);
+                    }
+                    logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), 0.0);
+                    List<String> warnings = buildWarnings(
+                            false,
+                            0.0,
+                            brightness,
+                            nowNs,
+                            lastFaceDetectedNs,
+                            latestProcessingStatus
+                    );
                     logWarningsAndDebug(
                             warnings,
                             nowNs,
@@ -477,18 +547,22 @@ public final class RppgEngine {
                             0.0,
                             0.0,
                             BpmStatus.INVALID,
+                            latestProcessingStatus,
+                            latestMotionScore,
                             warningLogState
                     );
                     publish(
                             true,
                             avgG,
-                            0.0,
-                            0.0,
-                            BpmStatus.INVALID,
+                            latestBpmDecision.bpm(),
+                            latestBpmDecision.rawBpm(),
+                            latestBpmDecision.status(),
                             autoDecision.activeMethod(),
                             autoDecision.autoModeState(),
                             autoDecision.probeCandidate(),
                             autoDecision.probeSecondsRemaining(),
+                            latestProcessingStatus,
+                            latestMotionScore,
                             0.0,
                             measuredFps,
                             0.0,
@@ -502,16 +576,88 @@ public final class RppgEngine {
                                 frameRois.leftCheek(),
                                 frameRois.rightCheek(),
                                 avgG,
-                                0.0,
-                                0.0,
-                                BpmStatus.INVALID,
+                                latestBpmDecision.bpm(),
+                                latestBpmDecision.rawBpm(),
+                                latestBpmDecision.status(),
                                 autoDecision.activeMethod(),
                                 autoDecision.autoModeState(),
                                 autoDecision.probeCandidate(),
                                 autoDecision.probeSecondsRemaining(),
+                                latestProcessingStatus,
+                                latestMotionScore,
                                 0.0,
                                 measuredFps,
                                 0.0,
+                                warnings
+                        );
+                        lastJpegEncodeNs = nowNs;
+                    }
+                    continue;
+                }
+
+                if (motionState.frozen()) {
+                    fillPercent = computeFillPercent(signalWindow, signalWindowCapacity);
+                    latestBpmDecision = stabilizer.holdCurrent();
+                    latestQuality = 0.0;
+                    logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), latestQuality);
+                    List<String> warnings = buildWarnings(
+                            signalWindow.isFull(),
+                            latestQuality,
+                            brightness,
+                            nowNs,
+                            lastFaceDetectedNs,
+                            latestProcessingStatus
+                    );
+                    logWarningsAndDebug(
+                            warnings,
+                            nowNs,
+                            avgG,
+                            measuredFps,
+                            fillPercent,
+                            latestBpmDecision.bpm(),
+                            latestQuality,
+                            latestBpmDecision.status(),
+                            latestProcessingStatus,
+                            latestMotionScore,
+                            warningLogState
+                    );
+                    publish(
+                            true,
+                            avgG,
+                            latestBpmDecision.bpm(),
+                            latestBpmDecision.rawBpm(),
+                            latestBpmDecision.status(),
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            autoDecision.probeCandidate(),
+                            autoDecision.probeSecondsRemaining(),
+                            latestProcessingStatus,
+                            latestMotionScore,
+                            latestQuality,
+                            measuredFps,
+                            fillPercent,
+                            warnings
+                    );
+                    if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
+                        renderAndStoreJpegFrame(
+                                bgr,
+                                lastFace,
+                                frameRois.forehead(),
+                                frameRois.leftCheek(),
+                                frameRois.rightCheek(),
+                                avgG,
+                                latestBpmDecision.bpm(),
+                                latestBpmDecision.rawBpm(),
+                                latestBpmDecision.status(),
+                                autoDecision.activeMethod(),
+                                autoDecision.autoModeState(),
+                                autoDecision.probeCandidate(),
+                                autoDecision.probeSecondsRemaining(),
+                                latestProcessingStatus,
+                                latestMotionScore,
+                                latestQuality,
+                                measuredFps,
+                                fillPercent,
                                 warnings
                         );
                         lastJpegEncodeNs = nowNs;
@@ -585,10 +731,9 @@ public final class RppgEngine {
                     }
                     logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), latestQuality);
                 } else {
-                    stabilizer.reset();
-                    latestBpmDecision = BpmStabilizer.Decision.invalid();
+                    latestBpmDecision = stabilizer.holdCurrent();
                     latestQuality = 0.0;
-                    logCsv(csvLogger, Instant.now(), avgG, null, 0.0);
+                    logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), 0.0);
                 }
 
                 List<String> warnings = buildWarnings(
@@ -597,7 +742,7 @@ public final class RppgEngine {
                         brightness,
                         nowNs,
                         lastFaceDetectedNs,
-                        lastMotionDetectedNs
+                        latestProcessingStatus
                 );
                 logWarningsAndDebug(
                         warnings,
@@ -608,6 +753,8 @@ public final class RppgEngine {
                         latestBpmDecision.bpm(),
                         latestQuality,
                         latestBpmDecision.status(),
+                        latestProcessingStatus,
+                        latestMotionScore,
                         warningLogState
                 );
                 publish(
@@ -620,6 +767,8 @@ public final class RppgEngine {
                         autoDecision.autoModeState(),
                         autoDecision.probeCandidate(),
                         autoDecision.probeSecondsRemaining(),
+                        latestProcessingStatus,
+                        latestMotionScore,
                         latestQuality,
                         measuredFps,
                         fillPercent,
@@ -640,6 +789,8 @@ public final class RppgEngine {
                             autoDecision.autoModeState(),
                             autoDecision.probeCandidate(),
                             autoDecision.probeSecondsRemaining(),
+                            latestProcessingStatus,
+                            latestMotionScore,
                             latestQuality,
                             measuredFps,
                             fillPercent,
@@ -659,6 +810,8 @@ public final class RppgEngine {
                     autoDecision.autoModeState(),
                     autoDecision.probeCandidate(),
                     autoDecision.probeSecondsRemaining(),
+                    latestProcessingStatus,
+                    latestMotionScore,
                     latestQuality,
                     0.0,
                     0.0,
@@ -674,6 +827,8 @@ public final class RppgEngine {
                     initialActiveSignalMethod(config.signalMethod()),
                     AutoModeState.STABLE,
                     null,
+                    0.0,
+                    ProcessingStatus.NORMAL,
                     0.0,
                     0.0,
                     0.0,
@@ -720,7 +875,7 @@ public final class RppgEngine {
             Double brightness,
             long nowNs,
             long lastFaceDetectedNs,
-            long lastMotionDetectedNs
+            ProcessingStatus processingStatus
     ) {
         List<String> warnings = new ArrayList<>(4);
 
@@ -734,7 +889,7 @@ public final class RppgEngine {
         if (brightness != null && brightness < config.lowLightBrightnessThreshold()) {
             warnings.add(WARNING_LOW_LIGHT);
         }
-        if (lastMotionDetectedNs != Long.MIN_VALUE && nowNs - lastMotionDetectedNs <= MOTION_WARNING_HOLD_NS) {
+        if (processingStatus == ProcessingStatus.MOTION_FREEZE) {
             warnings.add(WARNING_TOO_MUCH_MOTION);
         }
 
@@ -751,6 +906,8 @@ public final class RppgEngine {
             AutoModeState autoModeState,
             SignalMethod probeCandidate,
             double probeSecondsRemaining,
+            ProcessingStatus processingStatus,
+            double motionScore,
             double quality,
             double fps,
             double windowFill,
@@ -771,6 +928,8 @@ public final class RppgEngine {
                 autoModeState == null ? AutoModeState.STABLE : autoModeState,
                 probeCandidate,
                 round1(Math.max(0.0, probeSecondsRemaining)),
+                processingStatus == null ? ProcessingStatus.NORMAL : processingStatus,
+                round3(Math.max(0.0, motionScore)),
                 config.roiMode(),
                 snapshotRoiWeights(),
                 round3(quality),
@@ -797,6 +956,8 @@ public final class RppgEngine {
             double bpm,
             double quality,
             BpmStatus bpmStatus,
+            ProcessingStatus processingStatus,
+            double motionScore,
             WarningLogState state
     ) {
         boolean noFaceActive = warnings.contains(WARNING_NO_FACE);
@@ -817,13 +978,27 @@ public final class RppgEngine {
         }
         state.lowQualityActive = lowQualityActive;
 
+        boolean tooMuchMotionActive = warnings.contains(WARNING_TOO_MUCH_MOTION);
+        if (shouldEmitThrottledWarning(tooMuchMotionActive, nowNs, state.tooMuchMotionActive, state.lastMotionWarnLogNs)) {
+            log.warn(
+                    "TOO_MUCH_MOTION sustained: status={} motionScore={} threshold={}",
+                    processingStatus,
+                    String.format(Locale.US, "%.3f", motionScore),
+                    String.format(Locale.US, "%.3f", config.motionThreshold())
+            );
+            state.lastMotionWarnLogNs = nowNs;
+        }
+        state.tooMuchMotionActive = tooMuchMotionActive;
+
         if (log.isDebugEnabled()
                 && (state.lastFrameDebugLogNs == Long.MIN_VALUE || nowNs - state.lastFrameDebugLogNs >= DEBUG_FRAME_LOG_INTERVAL_NS)) {
             log.debug(
-                    "Frame update: avgG={}, bpm={}, status={}, quality={}, fps={}, windowFill={}, warnings={}",
+                    "Frame update: avgG={}, bpm={}, status={}, processing={}, motionScore={}, quality={}, fps={}, windowFill={}, warnings={}",
                     String.format(Locale.US, "%.2f", avgG),
                     String.format(Locale.US, "%.1f", bpm),
                     bpmStatus,
+                    processingStatus,
+                    String.format(Locale.US, "%.3f", motionScore),
                     String.format(Locale.US, "%.3f", quality),
                     String.format(Locale.US, "%.1f", fps),
                     String.format(Locale.US, "%.1f", windowFill),
@@ -963,28 +1138,6 @@ public final class RppgEngine {
         return best;
     }
 
-    private boolean isTooMuchMotion(Rect previousFace, Rect currentFace, int frameWidth, int frameHeight) {
-        if (previousFace == null || currentFace == null) {
-            return false;
-        }
-
-        double prevCx = previousFace.x() + previousFace.width() / 2.0;
-        double prevCy = previousFace.y() + previousFace.height() / 2.0;
-        double currCx = currentFace.x() + currentFace.width() / 2.0;
-        double currCy = currentFace.y() + currentFace.height() / 2.0;
-
-        double dx = currCx - prevCx;
-        double dy = currCy - prevCy;
-        double frameDiagonal = Math.hypot(Math.max(frameWidth, 1), Math.max(frameHeight, 1));
-        double centerDisplacement = Math.hypot(dx, dy) / Math.max(frameDiagonal, 1.0);
-
-        double prevArea = Math.max(1.0, (double) previousFace.width() * previousFace.height());
-        double currArea = Math.max(1.0, (double) currentFace.width() * currentFace.height());
-        double areaChange = Math.abs(currArea - prevArea) / prevArea;
-
-        return centerDisplacement > config.motionCenterThreshold() || areaChange > config.motionAreaChangeThreshold();
-    }
-
     private static FrameRois roiRectsForFace(Rect face, int frameWidth, int frameHeight, RoiMode roiMode) {
         FaceTracker.Rect faceRect = new FaceTracker.Rect(face.x(), face.y(), face.width(), face.height());
         if (roiMode == RoiMode.FOREHEAD_ONLY) {
@@ -1086,6 +1239,8 @@ public final class RppgEngine {
             AutoModeState autoModeState,
             SignalMethod probeCandidate,
             double probeSecondsRemaining,
+            ProcessingStatus processingStatus,
+            double motionScore,
             double quality,
             double fps,
             double windowFill,
@@ -1125,12 +1280,18 @@ public final class RppgEngine {
             );
             String line3 = String.format(
                     Locale.US,
-                    "Auto: %s  Probe: %s (%.1fs)",
+                    "Auto: %s  Probe: %s (%.1fs)  Proc: %s",
                     autoModeState,
                     probeCandidate == null ? "none" : probeCandidate.name(),
-                    Math.max(0.0, probeSecondsRemaining)
+                    Math.max(0.0, probeSecondsRemaining),
+                    processingStatus
             );
-            String line4 = warnings == null || warnings.isEmpty() ? "Warnings: none" : "Warnings: " + String.join(", ", warnings);
+            String line4 = String.format(
+                    Locale.US,
+                    "Motion: %.3f  %s",
+                    Math.max(0.0, motionScore),
+                    warnings == null || warnings.isEmpty() ? "Warnings: none" : "Warnings: " + String.join(", ", warnings)
+            );
             putText(view, line1, new Point(12, 24), FONT_HERSHEY_SIMPLEX, 0.6, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
             putText(view, line2, new Point(12, 48), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 255, 255, 0), 2, LINE_AA, false);
             putText(view, line3, new Point(12, 72), FONT_HERSHEY_SIMPLEX, 0.55, new Scalar(0, 200, 255, 0), 2, LINE_AA, false);
@@ -1199,8 +1360,10 @@ public final class RppgEngine {
     private static final class WarningLogState {
         private boolean noFaceActive;
         private boolean lowQualityActive;
+        private boolean tooMuchMotionActive;
         private long lastNoFaceWarnLogNs = Long.MIN_VALUE;
         private long lastLowQualityWarnLogNs = Long.MIN_VALUE;
+        private long lastMotionWarnLogNs = Long.MIN_VALUE;
         private long lastFrameDebugLogNs = Long.MIN_VALUE;
     }
 }

@@ -55,6 +55,13 @@ public final class BpmStabilizer {
         lastGoodHz = null;
     }
 
+    public Decision holdCurrent() {
+        if (lastGoodBpm != null && lastGoodHz != null) {
+            return new Decision(BpmStatus.HOLDING, lastGoodBpm, Double.NaN, Double.NaN);
+        }
+        return Decision.invalid();
+    }
+
     public record Decision(BpmStatus status, double bpm, double rawBpm, double rawHz) {
         public static Decision invalid(double rawBpm, double rawHz) {
             return new Decision(BpmStatus.INVALID, 0.0, rawBpm, rawHz);
