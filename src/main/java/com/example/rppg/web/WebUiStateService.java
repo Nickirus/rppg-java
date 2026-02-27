@@ -4,6 +4,7 @@ import com.example.rppg.app.Config;
 import com.example.rppg.app.RppgEngine;
 import com.example.rppg.app.RppgSnapshot;
 import jakarta.annotation.PreDestroy;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -21,6 +22,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Service
+@Slf4j
 public class WebUiStateService {
     private static final DateTimeFormatter SESSION_FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final String CSV_HEADER = "timestamp,avgG,bpm,quality";
@@ -55,16 +57,19 @@ public class WebUiStateService {
         synchronized (engineLock) {
             RppgEngine current = engine;
             if (current.getLatestSnapshot().running()) {
+                log.info("Web control start requested but engine is already running.");
                 snapshot = current.getLatestSnapshot();
             } else {
                 current.stop();
                 String sessionPath = nextSessionCsvPath();
                 ensureSessionCsvPrepared(sessionPath);
+                log.info("Session CSV created: {}", sessionPath);
                 Config sessionConfig = Config.defaults().withCsvPath(sessionPath);
                 RppgEngine sessionEngine = new RppgEngine(sessionConfig);
                 sessionEngine.start();
                 engine = sessionEngine;
                 snapshot = sessionEngine.getLatestSnapshot();
+                log.info("Web control start: engine started.");
             }
         }
         broadcast(snapshot);
@@ -76,6 +81,11 @@ public class WebUiStateService {
         synchronized (engineLock) {
             engine.stop();
             snapshot = engine.getLatestSnapshot();
+            log.info(
+                    "Web control stop: engine stopped. sessionFile={}, rows={}",
+                    snapshot.sessionFilePath(),
+                    snapshot.sessionRowCount()
+            );
         }
         broadcast(snapshot);
         return snapshot;
@@ -86,6 +96,7 @@ public class WebUiStateService {
         synchronized (engineLock) {
             engine.reset();
             snapshot = engine.getLatestSnapshot();
+            log.info("Web control reset: engine reset.");
         }
         broadcast(snapshot);
         return snapshot;
@@ -106,6 +117,7 @@ public class WebUiStateService {
         synchronized (engineLock) {
             engine.stop();
         }
+        log.info("WebUiStateService shutdown: engine stopped.");
         scheduler.shutdownNow();
         for (SseEmitter emitter : emitters) {
             try {
@@ -136,6 +148,7 @@ public class WebUiStateService {
             emitter.send(SseEmitter.event().name("snapshot").data(updated));
             return true;
         } catch (IOException | IllegalStateException e) {
+            log.warn("SSE stream send failed: {}", e.getMessage());
             try {
                 emitter.complete();
             } catch (Exception ignored) {

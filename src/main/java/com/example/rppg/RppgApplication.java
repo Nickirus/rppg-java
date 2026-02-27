@@ -19,15 +19,18 @@ public class RppgApplication {
     private static final String ARG_CSV_PREFIX = "--csv=";
 
     public static void main(String[] args) {
+        log.info("Application start requested.");
         CliOptions options = CliOptions.parse(args);
         switch (options.mode()) {
             case CAMERA_CHECK -> {
+                log.info("Selected mode: camera-check");
                 boolean ok = CameraSmokeCheck.runDefaultCameraCheck();
                 if (!ok) {
                     System.exit(1);
                 }
             }
             case RUN -> {
+                log.info("Selected mode: run");
                 Config config = Config.defaults();
                 if (options.csvPath() != null && !options.csvPath().isBlank()) {
                     config = config.withCsvPath(options.csvPath().trim());
@@ -38,12 +41,14 @@ public class RppgApplication {
                 }
             }
             case WEB -> {
+                log.info("Selected mode: web");
                 SpringApplication app = new SpringApplication(RppgApplication.class);
                 Map<String, Object> properties = new HashMap<>();
                 properties.put("server.address", "127.0.0.1");
                 properties.put("server.port", "8080");
                 properties.put("spring.main.banner-mode", "off");
                 app.setDefaultProperties(properties);
+                log.info("Starting web server on http://127.0.0.1:8080");
                 app.run(args);
             }
             case NONE -> log.info("Usage: --web | --run [--csv=PATH] | --camera-check");

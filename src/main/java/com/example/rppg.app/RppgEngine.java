@@ -5,6 +5,7 @@ import com.example.rppg.vision.RoiSelector;
 import com.example.signal.HeartRateEstimator;
 import com.example.signal.SignalQualityScorer;
 import com.example.signal.SignalWindow;
+import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.OpenCVFrameConverter;
@@ -40,10 +41,13 @@ import static org.bytedeco.opencv.global.opencv_imgproc.equalizeHist;
 import static org.bytedeco.opencv.global.opencv_imgproc.putText;
 import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 
+@Slf4j
 public final class RppgEngine {
     private static final int DETECT_EVERY_N_FRAMES = 3;
     private static final int MIN_FRAMES_FOR_FPS_ESTIMATE = 15;
     private static final long BPM_UPDATE_INTERVAL_NS = 2_000_000_000L;
+    private static final long WARNING_LOG_INTERVAL_NS = 2_000_000_000L;
+    private static final long DEBUG_FRAME_LOG_INTERVAL_NS = 2_000_000_000L;
     private static final long MOTION_WARNING_HOLD_NS = 1_000_000_000L;
     private static final String WARNING_NO_FACE = "NO_FACE";
     private static final String WARNING_LOW_QUALITY = "LOW_QUALITY";
@@ -70,6 +74,7 @@ public final class RppgEngine {
     public boolean start() {
         synchronized (lifecycleLock) {
             if (workerThread != null && workerThread.isAlive()) {
+                log.info("RppgEngine start requested but already running.");
                 return true;
             }
             stopRequested.set(false);
@@ -80,11 +85,13 @@ public final class RppgEngine {
             workerThread = new Thread(this::runLoop, "rppg-engine");
             workerThread.setDaemon(true);
             workerThread.start();
+            log.info("RppgEngine started. csvPath={}", config.csvPath());
             return true;
         }
     }
 
     public void stop() {
+        log.info("RppgEngine stop requested.");
         Thread threadToJoin;
         synchronized (lifecycleLock) {
             stopRequested.set(true);
@@ -103,9 +110,11 @@ public final class RppgEngine {
             }
         }
         latestJpegFrame.set(null);
+        log.info("RppgEngine stopped.");
     }
 
     public void reset() {
+        log.info("RppgEngine reset requested.");
         stop();
         sessionFilePath.set("");
         sessionStartNs.set(0L);
@@ -124,6 +133,7 @@ public final class RppgEngine {
                 0L
         ));
         latestJpegFrame.set(null);
+        log.info("RppgEngine reset complete.");
     }
 
     public RppgSnapshot getLatestSnapshot() {
@@ -140,14 +150,14 @@ public final class RppgEngine {
 
     private void runLoop() {
         if (!Files.exists(CASCADE_PATH)) {
-            System.err.println("Missing Haar cascade file: " + CASCADE_PATH);
+            log.warn("Missing Haar cascade file: {}", CASCADE_PATH);
             publish(false, 0.0, 0.0, 0.0, 0.0, 0.0, List.of("ERROR_MISSING_CASCADE"));
             return;
         }
 
         CascadeClassifier classifier = new CascadeClassifier(CASCADE_PATH.toString());
         if (classifier.empty()) {
-            System.err.println("Invalid Haar cascade file: " + CASCADE_PATH);
+            log.warn("Invalid Haar cascade file: {}", CASCADE_PATH);
             publish(false, 0.0, 0.0, 0.0, 0.0, 0.0, List.of("ERROR_INVALID_CASCADE"));
             return;
         }
@@ -161,7 +171,7 @@ public final class RppgEngine {
             grabber.start();
         } catch (Exception e) {
             classifier.close();
-            System.err.println("Camera unavailable: " + e.getMessage());
+            log.warn("Camera unavailable: {}", e.getMessage());
             publish(false, 0.0, 0.0, 0.0, 0.0, 0.0, List.of("ERROR_CAMERA_UNAVAILABLE"));
             return;
         }
@@ -189,6 +199,9 @@ public final class RppgEngine {
             Double latestBpm = null;
             double latestQuality = 0.0;
             double latestAvgG = 0.0;
+            WarningLogState warningLogState = new WarningLogState();
+
+            log.info("Engine loop started. sessionCsv={}", config.csvPath());
 
             while (!stopRequested.get()) {
                 Frame frame = grabber.grab();
@@ -223,6 +236,7 @@ public final class RppgEngine {
                 double fillPercent = computeFillPercent(signalWindow, signalWindowCapacity);
                 if (lastFace == null) {
                     List<String> warnings = buildWarnings(false, latestQuality, null, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
+                    logWarningsAndDebug(warnings, nowNs, latestAvgG, measuredFps, fillPercent, valueOrZero(latestBpm), latestQuality, warningLogState);
                     publish(true, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, fillPercent, warnings);
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(
@@ -245,6 +259,7 @@ public final class RppgEngine {
                 Rect foreheadRect = new Rect(forehead.x(), forehead.y(), forehead.width(), forehead.height());
                 if (foreheadRect.width() <= 0 || foreheadRect.height() <= 0) {
                     List<String> warnings = buildWarnings(false, latestQuality, null, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
+                    logWarningsAndDebug(warnings, nowNs, latestAvgG, measuredFps, fillPercent, valueOrZero(latestBpm), latestQuality, warningLogState);
                     publish(true, latestAvgG, valueOrZero(latestBpm), latestQuality, measuredFps, fillPercent, warnings);
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(
@@ -275,12 +290,11 @@ public final class RppgEngine {
                         signalWindow.add(sample);
                     }
                     warmupSamples.clear();
-                    System.out.printf(
-                            Locale.US,
-                            "Signal window initialized: %d samples (window=%ds, fps=%.2f)%n",
+                    log.info(
+                            "Signal window initialized: samples={}, windowSeconds={}, fps={}",
                             signalWindowCapacity,
                             config.windowSeconds(),
-                            measuredFps
+                            String.format(Locale.US, "%.2f", measuredFps)
                     );
                 }
 
@@ -288,6 +302,7 @@ public final class RppgEngine {
                     warmupSamples.add(avgG);
                     logCsv(csvLogger, Instant.now(), avgG, null, 0.0);
                     List<String> warnings = buildWarnings(false, 0.0, brightness, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
+                    logWarningsAndDebug(warnings, nowNs, avgG, measuredFps, 0.0, 0.0, 0.0, warningLogState);
                     publish(true, avgG, 0.0, 0.0, measuredFps, 0.0, warnings);
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(bgr, lastFace, foreheadRect, avgG, 0.0, 0.0, measuredFps, 0.0, warnings);
@@ -313,24 +328,22 @@ public final class RppgEngine {
                         latestQuality = quality;
                         if (result.valid() && quality >= config.qualityThreshold()) {
                             latestBpm = result.bpm();
-                            System.out.printf(
-                                    Locale.US,
-                                    "BPM update: %.1f bpm (%.3f Hz), quality=%.3f%n",
-                                    result.bpm(),
-                                    result.hz(),
-                                    quality
+                            log.debug(
+                                    "BPM update: bpm={}, hz={}, quality={}",
+                                    String.format(Locale.US, "%.1f", result.bpm()),
+                                    String.format(Locale.US, "%.3f", result.hz()),
+                                    String.format(Locale.US, "%.3f", quality)
                             );
                         } else if (result.valid()) {
                             latestBpm = null;
-                            System.out.printf(
-                                    Locale.US,
-                                    "BPM update: low-confidence (quality=%.3f < %.3f), marked invalid%n",
-                                    quality,
-                                    config.qualityThreshold()
+                            log.debug(
+                                    "BPM update: low-confidence quality={} threshold={}",
+                                    String.format(Locale.US, "%.3f", quality),
+                                    String.format(Locale.US, "%.3f", config.qualityThreshold())
                             );
                         } else {
                             latestBpm = null;
-                            System.out.println("BPM update: invalid: " + result.reason());
+                            log.debug("BPM update invalid: {}", result.reason());
                         }
                         lastBpmUpdateNs = estimateNowNs;
                     }
@@ -348,6 +361,16 @@ public final class RppgEngine {
                         nowNs,
                         lastFaceDetectedNs,
                         lastMotionDetectedNs
+                );
+                logWarningsAndDebug(
+                        warnings,
+                        nowNs,
+                        avgG,
+                        measuredFps,
+                        fillPercent,
+                        valueOrZero(latestBpm),
+                        latestQuality,
+                        warningLogState
                 );
                 publish(true, avgG, valueOrZero(latestBpm), latestQuality, measuredFps, fillPercent, warnings);
                 if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
@@ -369,11 +392,12 @@ public final class RppgEngine {
             publish(false, latestAvgG, valueOrZero(latestBpm), latestQuality, 0.0, 0.0, List.of());
         } catch (Exception e) {
             publish(false, 0.0, 0.0, 0.0, 0.0, 0.0, List.of("ERROR_PROCESSING_FAILED"));
-            System.err.println("RppgEngine processing failed: " + e.getMessage());
+            log.warn("RppgEngine processing failed: {}", e.getMessage());
         } finally {
             if (csvLogger != null) {
                 try {
                     csvLogger.close();
+                    log.info("Session CSV closed: {}", config.csvPath());
                 } catch (Exception ignored) {
                     // ignore
                 }
@@ -460,6 +484,64 @@ public final class RppgEngine {
     private void logCsv(CsvSignalLogger logger, Instant timestamp, double avgG, Double bpm, double quality) throws IOException {
         logger.log(timestamp, avgG, bpm, quality);
         sessionRowCount.incrementAndGet();
+    }
+
+    private void logWarningsAndDebug(
+            List<String> warnings,
+            long nowNs,
+            double avgG,
+            double fps,
+            double windowFill,
+            double bpm,
+            double quality,
+            WarningLogState state
+    ) {
+        boolean noFaceActive = warnings.contains(WARNING_NO_FACE);
+        if (shouldEmitThrottledWarning(noFaceActive, nowNs, state.noFaceActive, state.lastNoFaceWarnLogNs)) {
+            log.warn("NO_FACE sustained for >= {} seconds.", config.noFaceWarningSeconds());
+            state.lastNoFaceWarnLogNs = nowNs;
+        }
+        state.noFaceActive = noFaceActive;
+
+        boolean lowQualityActive = warnings.contains(WARNING_LOW_QUALITY);
+        if (shouldEmitThrottledWarning(lowQualityActive, nowNs, state.lowQualityActive, state.lastLowQualityWarnLogNs)) {
+            log.warn(
+                    "LOW_QUALITY sustained: quality={} threshold={}",
+                    String.format(Locale.US, "%.3f", quality),
+                    String.format(Locale.US, "%.3f", config.qualityThreshold())
+            );
+            state.lastLowQualityWarnLogNs = nowNs;
+        }
+        state.lowQualityActive = lowQualityActive;
+
+        if (log.isDebugEnabled()
+                && (state.lastFrameDebugLogNs == Long.MIN_VALUE || nowNs - state.lastFrameDebugLogNs >= DEBUG_FRAME_LOG_INTERVAL_NS)) {
+            log.debug(
+                    "Frame update: avgG={}, bpm={}, quality={}, fps={}, windowFill={}, warnings={}",
+                    String.format(Locale.US, "%.2f", avgG),
+                    String.format(Locale.US, "%.1f", bpm),
+                    String.format(Locale.US, "%.3f", quality),
+                    String.format(Locale.US, "%.1f", fps),
+                    String.format(Locale.US, "%.1f", windowFill),
+                    warnings
+            );
+            state.lastFrameDebugLogNs = nowNs;
+        }
+    }
+
+    private static boolean shouldEmitThrottledWarning(
+            boolean currentlyActive,
+            long nowNs,
+            boolean wasActive,
+            long lastLogNs
+    ) {
+        if (!currentlyActive) {
+            return false;
+        }
+        if (!wasActive) {
+            return true;
+        }
+        return lastLogNs == Long.MIN_VALUE || nowNs - lastLogNs >= WARNING_LOG_INTERVAL_NS;
     }
 
     private static double valueOrZero(Double value) {
@@ -613,5 +695,13 @@ public final class RppgEngine {
         } finally {
             view.close();
         }
+    }
+
+    private static final class WarningLogState {
+        private boolean noFaceActive;
+        private boolean lowQualityActive;
+        private long lastNoFaceWarnLogNs = Long.MIN_VALUE;
+        private long lastLowQualityWarnLogNs = Long.MIN_VALUE;
+        private long lastFrameDebugLogNs = Long.MIN_VALUE;
     }
 }

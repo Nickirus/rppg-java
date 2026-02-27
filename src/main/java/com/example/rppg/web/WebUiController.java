@@ -3,6 +3,7 @@ package com.example.rppg.web;
 import com.example.rppg.app.RppgSnapshot;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -14,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 @RestController
+@Slf4j
 public class WebUiController {
     private final WebUiStateService stateService;
 
@@ -184,7 +186,7 @@ public class WebUiController {
                 sleepQuietly(80L);
             }
         } catch (IOException e) {
-            // client disconnected
+            log.warn("MJPEG stream error: {}", e.getMessage());
         }
     }
 

@@ -2,6 +2,7 @@ package com.example.rppg.app;
 
 import com.example.rppg.vision.FaceTracker;
 import com.example.rppg.vision.RoiSelector;
+import lombok.extern.slf4j.Slf4j;
 import org.bytedeco.javacv.CanvasFrame;
 import org.bytedeco.javacv.Frame;
 import org.bytedeco.javacv.OpenCVFrameConverter;
@@ -25,6 +26,7 @@ import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
 import static org.bytedeco.opencv.global.opencv_imgproc.equalizeHist;
 import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 
+@Slf4j
 public final class CameraSmokeCheck {
     private static final int CAMERA_INDEX = 0;
     private static final long CHECK_DURATION_MS = 5_000L;
@@ -36,18 +38,19 @@ public final class CameraSmokeCheck {
     }
 
     public static boolean runDefaultCameraCheck() {
+        log.info("Camera smoke-check mode selected.");
         if (!Files.exists(CASCADE_PATH)) {
-            System.err.println("Camera check failed: missing Haar cascade file.");
-            System.err.println("Expected file: " + CASCADE_PATH.toAbsolutePath());
-            System.err.println("Add the file and rerun. See README section \"Haar Cascade File\".");
+            log.warn("Camera check failed: missing Haar cascade file.");
+            log.warn("Expected file: {}", CASCADE_PATH.toAbsolutePath());
+            log.warn("Add the file and rerun. See README section \"Haar Cascade File\".");
             return false;
         }
 
         CascadeClassifier classifier = new CascadeClassifier(CASCADE_PATH.toString());
         if (classifier.empty()) {
-            System.err.println("Camera check failed: cannot load Haar cascade file.");
-            System.err.println("Path: " + CASCADE_PATH.toAbsolutePath());
-            System.err.println("Verify the file is a valid OpenCV haarcascade XML.");
+            log.warn("Camera check failed: cannot load Haar cascade file.");
+            log.warn("Path: {}", CASCADE_PATH.toAbsolutePath());
+            log.warn("Verify the file is a valid OpenCV haarcascade XML.");
             return false;
         }
 
@@ -55,8 +58,8 @@ public final class CameraSmokeCheck {
         try {
             grabber.start();
         } catch (Exception e) {
-            System.err.println("Camera check failed: default camera is unavailable or cannot be opened.");
-            System.err.println("Details: " + e.getMessage());
+            log.warn("Camera check failed: default camera is unavailable or cannot be opened.");
+            log.warn("Details: {}", e.getMessage());
             return false;
         }
 
@@ -101,29 +104,30 @@ public final class CameraSmokeCheck {
             }
 
             if (framesShown == 0) {
-                System.err.println("Camera check failed: camera opened but no frames were received.");
+                log.warn("Camera check failed: camera opened but no frames were received.");
                 return false;
             }
 
             double elapsedSeconds = (System.nanoTime() - startedAtNs) / 1_000_000_000.0;
             double fps = framesShown / elapsedSeconds;
-            System.out.printf(
+            String summary = String.format(
                     Locale.US,
-                    "Camera check OK: %.2f FPS, %dx%d, frames=%d, duration=%.2fs%n",
+                    "Camera check OK: %.2f FPS, %dx%d, frames=%d, duration=%.2fs",
                     fps,
                     width,
                     height,
                     framesShown,
                     elapsedSeconds
             );
+            log.info(summary);
             return true;
         } catch (java.awt.HeadlessException e) {
-            System.err.println("Camera check failed: no display is available for preview window.");
-            System.err.println("Details: " + e.getMessage());
+            log.warn("Camera check failed: no display is available for preview window.");
+            log.warn("Details: {}", e.getMessage());
             return false;
         } catch (Exception e) {
-            System.err.println("Camera check failed during preview.");
-            System.err.println("Details: " + e.getMessage());
+            log.warn("Camera check failed during preview.");
+            log.warn("Details: {}", e.getMessage());
             return false;
         } finally {
             if (window != null) {
