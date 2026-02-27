@@ -70,6 +70,8 @@ public class WebUiController {
                     <div class="card"><div class="label">Auto State</div><div id="autoModeState" class="value">--</div></div>
                     <div class="card"><div class="label">Probe Candidate</div><div id="probeCandidate" class="value">--</div></div>
                     <div class="card"><div class="label">Probe Remaining</div><div id="probeSecondsRemaining" class="value">0.0s</div></div>
+                    <div class="card"><div class="label">ROI Mode</div><div id="roiMode" class="value">--</div></div>
+                    <div class="card"><div class="label">ROI Weights</div><div id="roiWeights" class="small">--</div></div>
                     <div class="card"><div class="label">Quality</div><div id="quality" class="value">--</div></div>
                     <div class="card"><div class="label">FPS</div><div id="fps" class="value">--</div></div>
                     <div class="card"><div class="label">Window Fill</div><div id="windowFill" class="value">--</div></div>
@@ -372,12 +374,18 @@ public class WebUiController {
                       const autoModeState = data && typeof data.autoModeState === 'string' ? data.autoModeState : '--';
                       const probeCandidate = data && typeof data.probeCandidate === 'string' ? data.probeCandidate : '--';
                       const probeSecondsRemaining = data && typeof data.probeSecondsRemaining === 'number' ? data.probeSecondsRemaining : 0.0;
+                      const roiMode = data && typeof data.roiMode === 'string' ? data.roiMode : '--';
+                      const roiWeights = data && Array.isArray(data.roiWeights)
+                        ? data.roiWeights.map((v) => Number(v).toFixed(2)).join(' / ')
+                        : '--';
                       document.getElementById('bpm').textContent = Number.isFinite(bpm) ? bpm.toFixed(1) : '--';
                       document.getElementById('bpmStatus').textContent = bpmStatus;
                       document.getElementById('activeSignalMethod').textContent = activeSignalMethod;
                       document.getElementById('autoModeState').textContent = autoModeState;
                       document.getElementById('probeCandidate').textContent = probeCandidate;
                       document.getElementById('probeSecondsRemaining').textContent = probeSecondsRemaining.toFixed(1) + 's';
+                      document.getElementById('roiMode').textContent = roiMode;
+                      document.getElementById('roiWeights').textContent = roiWeights;
                       document.getElementById('quality').textContent = data.quality.toFixed(3);
                       document.getElementById('fps').textContent = data.fps.toFixed(1);
                       document.getElementById('windowFill').textContent = data.windowFill.toFixed(1) + '%';

@@ -3,6 +3,7 @@ package com.example.rppg.app;
 import com.example.signal.AutoModeState;
 import com.example.signal.BpmStatus;
 import com.example.signal.SignalMethod;
+import com.example.rppg.vision.RoiMode;
 
 import java.time.Instant;
 import java.util.List;
@@ -18,6 +19,8 @@ public record RppgSnapshot(
         AutoModeState autoModeState,
         SignalMethod probeCandidate,
         double probeSecondsRemaining,
+        RoiMode roiMode,
+        List<Double> roiWeights,
         double quality,
         double fps,
         double windowFill,
@@ -38,6 +41,8 @@ public record RppgSnapshot(
                 AutoModeState.STABLE,
                 null,
                 0.0,
+                RoiMode.MULTI,
+                List.of(0.3, 0.35, 0.35),
                 0.0,
                 0.0,
                 0.0,

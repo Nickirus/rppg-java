@@ -1,6 +1,7 @@
 package com.example.rppg.app;
 
 import com.example.rppg.vision.FaceTracker;
+import com.example.rppg.vision.RoiMode;
 import com.example.rppg.vision.RoiSelector;
 import com.example.signal.AutoModeState;
 import com.example.signal.AutoSignalMethodSelector;
@@ -156,6 +157,8 @@ public final class RppgEngine {
                 AutoModeState.STABLE,
                 null,
                 0.0,
+                config.roiMode(),
+                snapshotRoiWeights(),
                 0.0,
                 0.0,
                 0.0,
@@ -355,6 +358,8 @@ public final class RppgEngine {
                                 bgr,
                                 null,
                                 null,
+                                null,
+                                null,
                                 latestAvgG,
                                 latestBpmDecision.bpm(),
                                 latestBpmDecision.rawBpm(),
@@ -373,9 +378,8 @@ public final class RppgEngine {
                     continue;
                 }
 
-                FaceTracker.Rect forehead = foreheadRoiForFace(lastFace, bgr.cols(), bgr.rows());
-                Rect foreheadRect = new Rect(forehead.x(), forehead.y(), forehead.width(), forehead.height());
-                if (foreheadRect.width() <= 0 || foreheadRect.height() <= 0) {
+                FrameRois frameRois = roiRectsForFace(lastFace, bgr.cols(), bgr.rows(), config.roiMode());
+                if (!frameRois.isUsable(config.roiMode())) {
                     List<String> warnings = buildWarnings(false, latestQuality, null, nowNs, lastFaceDetectedNs, lastMotionDetectedNs);
                     logWarningsAndDebug(
                             warnings,
@@ -407,7 +411,9 @@ public final class RppgEngine {
                         renderAndStoreJpegFrame(
                                 bgr,
                                 lastFace,
-                                null,
+                                frameRois.forehead(),
+                                frameRois.leftCheek(),
+                                frameRois.rightCheek(),
                                 latestAvgG,
                                 latestBpmDecision.bpm(),
                                 latestBpmDecision.rawBpm(),
@@ -426,7 +432,14 @@ public final class RppgEngine {
                     continue;
                 }
 
-                RoiStats roiStats = extractRoiStats(bgr, foreheadRect);
+                RoiStats roiStats = extractCombinedRoiStats(
+                        bgr,
+                        frameRois,
+                        config.roiMode(),
+                        config.roiForeheadWeight(),
+                        config.roiLeftCheekWeight(),
+                        config.roiRightCheekWeight()
+                );
                 double avgG = roiStats.meanG();
                 double brightness = roiStats.meanBrightness();
                 double extractedSample = sanitizeSignalSample(
@@ -485,7 +498,9 @@ public final class RppgEngine {
                         renderAndStoreJpegFrame(
                                 bgr,
                                 lastFace,
-                                foreheadRect,
+                                frameRois.forehead(),
+                                frameRois.leftCheek(),
+                                frameRois.rightCheek(),
                                 avgG,
                                 0.0,
                                 0.0,
@@ -614,7 +629,9 @@ public final class RppgEngine {
                     renderAndStoreJpegFrame(
                             bgr,
                             lastFace,
-                            foreheadRect,
+                            frameRois.forehead(),
+                            frameRois.leftCheek(),
+                            frameRois.rightCheek(),
                             avgG,
                             latestBpmDecision.bpm(),
                             latestBpmDecision.rawBpm(),
@@ -754,6 +771,8 @@ public final class RppgEngine {
                 autoModeState == null ? AutoModeState.STABLE : autoModeState,
                 probeCandidate,
                 round1(Math.max(0.0, probeSecondsRemaining)),
+                config.roiMode(),
+                snapshotRoiWeights(),
                 round3(quality),
                 round2(fps),
                 round1(windowFill),
@@ -841,6 +860,18 @@ public final class RppgEngine {
             return SignalMethod.POS;
         }
         return configuredMethod;
+    }
+
+    private List<Double> snapshotRoiWeights() {
+        if (config.roiMode() == RoiMode.FOREHEAD_ONLY) {
+            return List.of(1.0, 0.0, 0.0);
+        }
+        double[] weights = normalizedRoiWeights(
+                config.roiForeheadWeight(),
+                config.roiLeftCheekWeight(),
+                config.roiRightCheekWeight()
+        );
+        return List.of(round3(weights[0]), round3(weights[1]), round3(weights[2]));
     }
 
     private static EnumMap<SignalMethod, RppgSignalExtractor> createExtractors(int temporalWindow) {
@@ -954,23 +985,79 @@ public final class RppgEngine {
         return centerDisplacement > config.motionCenterThreshold() || areaChange > config.motionAreaChangeThreshold();
     }
 
-    private static FaceTracker.Rect foreheadRoiForFace(Rect face, int frameWidth, int frameHeight) {
-        FaceTracker.Rect forehead = RoiSelector.foreheadRoi(
-                new FaceTracker.Rect(face.x(), face.y(), face.width(), face.height())
-        );
-        int x = Math.max(0, forehead.x());
-        int y = Math.max(0, forehead.y());
+    private static FrameRois roiRectsForFace(Rect face, int frameWidth, int frameHeight, RoiMode roiMode) {
+        FaceTracker.Rect faceRect = new FaceTracker.Rect(face.x(), face.y(), face.width(), face.height());
+        if (roiMode == RoiMode.FOREHEAD_ONLY) {
+            Rect forehead = toOpenCvRect(clampToFrame(RoiSelector.foreheadRoi(faceRect), frameWidth, frameHeight));
+            return new FrameRois(forehead, null, null);
+        }
+        RoiSelector.MultiRoi multiRoi = RoiSelector.multiRegionRois(faceRect);
+        Rect forehead = toOpenCvRect(clampToFrame(multiRoi.forehead(), frameWidth, frameHeight));
+        Rect leftCheek = toOpenCvRect(clampToFrame(multiRoi.leftCheek(), frameWidth, frameHeight));
+        Rect rightCheek = toOpenCvRect(clampToFrame(multiRoi.rightCheek(), frameWidth, frameHeight));
+        return new FrameRois(forehead, leftCheek, rightCheek);
+    }
+
+    private static FaceTracker.Rect clampToFrame(FaceTracker.Rect roi, int frameWidth, int frameHeight) {
+        int x = Math.max(0, roi.x());
+        int y = Math.max(0, roi.y());
         int maxW = Math.max(0, frameWidth - x);
         int maxH = Math.max(0, frameHeight - y);
-        int w = Math.max(0, Math.min(forehead.width(), maxW));
-        int h = Math.max(0, Math.min(forehead.height(), maxH));
+        int w = Math.max(0, Math.min(roi.width(), maxW));
+        int h = Math.max(0, Math.min(roi.height(), maxH));
         return new FaceTracker.Rect(x, y, w, h);
     }
 
-    private static RoiStats extractRoiStats(Mat bgrFrame, Rect roiRect) {
+    private static Rect toOpenCvRect(FaceTracker.Rect rect) {
+        return new Rect(rect.x(), rect.y(), rect.width(), rect.height());
+    }
+
+    private static boolean isValidRect(Rect rect) {
+        return rect != null && rect.width() > 0 && rect.height() > 0;
+    }
+
+    private static RoiStats extractSingleRoiStats(Mat bgrFrame, Rect roiRect) {
         Mat roi = new Mat(bgrFrame, roiRect);
         Scalar channelMeans = mean(roi);
         return new RoiStats(channelMeans.get(2), channelMeans.get(1), channelMeans.get(0));
+    }
+
+    private static RoiStats extractCombinedRoiStats(
+            Mat bgrFrame,
+            FrameRois rois,
+            RoiMode roiMode,
+            double foreheadWeight,
+            double leftCheekWeight,
+            double rightCheekWeight
+    ) {
+        RoiStats forehead = extractSingleRoiStats(bgrFrame, rois.forehead());
+        if (roiMode == RoiMode.FOREHEAD_ONLY) {
+            return forehead;
+        }
+
+        RoiStats leftCheek = extractSingleRoiStats(bgrFrame, rois.leftCheek());
+        RoiStats rightCheek = extractSingleRoiStats(bgrFrame, rois.rightCheek());
+        double[] normalized = normalizedRoiWeights(foreheadWeight, leftCheekWeight, rightCheekWeight);
+
+        double meanR = forehead.meanR() * normalized[0] + leftCheek.meanR() * normalized[1] + rightCheek.meanR() * normalized[2];
+        double meanG = forehead.meanG() * normalized[0] + leftCheek.meanG() * normalized[1] + rightCheek.meanG() * normalized[2];
+        double meanB = forehead.meanB() * normalized[0] + leftCheek.meanB() * normalized[1] + rightCheek.meanB() * normalized[2];
+        return new RoiStats(meanR, meanG, meanB);
+    }
+
+    private static double[] normalizedRoiWeights(
+            double foreheadWeight,
+            double leftCheekWeight,
+            double rightCheekWeight
+    ) {
+        double wf = Math.max(0.0, foreheadWeight);
+        double wl = Math.max(0.0, leftCheekWeight);
+        double wr = Math.max(0.0, rightCheekWeight);
+        double sum = wf + wl + wr;
+        if (sum <= 1e-9) {
+            return new double[]{0.30, 0.35, 0.35};
+        }
+        return new double[]{wf / sum, wl / sum, wr / sum};
     }
 
     private static long computeJpegEncodeIntervalNs(double previewJpegFps) {
@@ -988,7 +1075,9 @@ public final class RppgEngine {
     private void renderAndStoreJpegFrame(
             Mat bgrFrame,
             Rect faceRect,
-            Rect roiRect,
+            Rect foreheadRect,
+            Rect leftCheekRect,
+            Rect rightCheekRect,
             double avgG,
             double bpm,
             double rawBpm,
@@ -1007,8 +1096,14 @@ public final class RppgEngine {
             if (faceRect != null) {
                 rectangle(view, faceRect, new Scalar(0, 255, 0, 0), 2, LINE_8, 0);
             }
-            if (roiRect != null) {
-                rectangle(view, roiRect, new Scalar(255, 255, 0, 0), 2, LINE_8, 0);
+            if (foreheadRect != null) {
+                rectangle(view, foreheadRect, new Scalar(255, 255, 0, 0), 2, LINE_8, 0);
+            }
+            if (leftCheekRect != null) {
+                rectangle(view, leftCheekRect, new Scalar(255, 128, 0, 0), 2, LINE_8, 0);
+            }
+            if (rightCheekRect != null) {
+                rectangle(view, rightCheekRect, new Scalar(255, 128, 0, 0), 2, LINE_8, 0);
             }
 
             String line1 = String.format(
@@ -1021,11 +1116,12 @@ public final class RppgEngine {
             );
             String line2 = String.format(
                     Locale.US,
-                    "FPS: %.1f  Fill: %.1f%%  avgG: %.1f  Method: %s",
+                    "FPS: %.1f  Fill: %.1f%%  avgG: %.1f  Method: %s  ROI: %s",
                     fps,
                     windowFill,
                     avgG,
-                    activeSignalMethod
+                    activeSignalMethod,
+                    config.roiMode()
             );
             String line3 = String.format(
                     Locale.US,
@@ -1057,6 +1153,43 @@ public final class RppgEngine {
             }
         } finally {
             view.close();
+        }
+    }
+
+    @Getter
+    @ToString
+    @EqualsAndHashCode
+    private static final class FrameRois {
+        private final Rect forehead;
+        private final Rect leftCheek;
+        private final Rect rightCheek;
+
+        private FrameRois(Rect forehead, Rect leftCheek, Rect rightCheek) {
+            this.forehead = forehead;
+            this.leftCheek = leftCheek;
+            this.rightCheek = rightCheek;
+        }
+
+        private Rect forehead() {
+            return forehead;
+        }
+
+        private Rect leftCheek() {
+            return leftCheek;
+        }
+
+        private Rect rightCheek() {
+            return rightCheek;
+        }
+
+        private boolean isUsable(RoiMode roiMode) {
+            if (!isValidRect(forehead)) {
+                return false;
+            }
+            if (roiMode == RoiMode.FOREHEAD_ONLY) {
+                return true;
+            }
+            return isValidRect(leftCheek) && isValidRect(rightCheek);
         }
     }
 

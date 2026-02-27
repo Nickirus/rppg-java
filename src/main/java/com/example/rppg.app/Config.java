@@ -1,5 +1,6 @@
 package com.example.rppg.app;
 
+import com.example.rppg.vision.RoiMode;
 import com.example.signal.SignalMethod;
 
 public record Config(
@@ -15,6 +16,10 @@ public record Config(
         double qualityThreshold,
         double maxStepPerUpdateBpm,
         SignalMethod signalMethod,
+        RoiMode roiMode,
+        double roiForeheadWeight,
+        double roiLeftCheekWeight,
+        double roiRightCheekWeight,
         int extractorTemporalWindow,
         double autoFallbackMinHoldSeconds,
         int autoLowQualityUpdatesThreshold,
@@ -42,6 +47,10 @@ public record Config(
                 0.20,
                 8.0,
                 SignalMethod.AUTO,
+                RoiMode.MULTI,
+                0.30,
+                0.35,
+                0.35,
                 32,
                 8.0,
                 3,
@@ -71,6 +80,10 @@ public record Config(
                 qualityThreshold,
                 maxStepPerUpdateBpm,
                 signalMethod,
+                roiMode,
+                roiForeheadWeight,
+                roiLeftCheekWeight,
+                roiRightCheekWeight,
                 extractorTemporalWindow,
                 autoFallbackMinHoldSeconds,
                 autoLowQualityUpdatesThreshold,
