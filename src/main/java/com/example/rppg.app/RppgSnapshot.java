@@ -1,5 +1,7 @@
 package com.example.rppg.app;
 
+import com.example.signal.BpmStatus;
+
 import java.time.Instant;
 import java.util.List;
 
@@ -8,6 +10,8 @@ public record RppgSnapshot(
         boolean running,
         double avgG,
         double bpm,
+        double rawBpm,
+        BpmStatus bpmStatus,
         double quality,
         double fps,
         double windowFill,
@@ -22,6 +26,8 @@ public record RppgSnapshot(
                 false,
                 0.0,
                 0.0,
+                0.0,
+                BpmStatus.INVALID,
                 0.0,
                 0.0,
                 0.0,

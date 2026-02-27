@@ -65,6 +65,7 @@ public class WebUiController {
                   </div>
                   <div class="grid">
                     <div class="card"><div class="label">BPM</div><div id="bpm" class="value">--</div></div>
+                    <div class="card"><div class="label">BPM Status</div><div id="bpmStatus" class="value">INVALID</div></div>
                     <div class="card"><div class="label">Quality</div><div id="quality" class="value">--</div></div>
                     <div class="card"><div class="label">FPS</div><div id="fps" class="value">--</div></div>
                     <div class="card"><div class="label">Window Fill</div><div id="windowFill" class="value">--</div></div>
@@ -121,7 +122,8 @@ public class WebUiController {
 
                     function pushBpmPoint(data, warnings) {
                       const bpm = data && typeof data.bpm === 'number' ? data.bpm : NaN;
-                      const valid = Number.isFinite(bpm) && bpm > 0 && !warnings.includes('LOW_QUALITY');
+                      const status = data && typeof data.bpmStatus === 'string' ? data.bpmStatus : 'INVALID';
+                      const valid = Number.isFinite(bpm) && bpm > 0 && status === 'VALID' && !warnings.includes('LOW_QUALITY');
                       bpmHistory[bpmWriteIndex] = valid ? bpm : null;
                       bpmWriteIndex = (bpmWriteIndex + 1) % BPM_HISTORY_SIZE;
                       bpmCount = Math.min(bpmCount + 1, BPM_HISTORY_SIZE);
@@ -360,7 +362,10 @@ public class WebUiController {
                     const eventSource = new EventSource('/api/sse');
                     eventSource.addEventListener('snapshot', (evt) => {
                       const data = JSON.parse(evt.data);
-                      document.getElementById('bpm').textContent = data.bpm.toFixed(1);
+                      const bpm = data && typeof data.bpm === 'number' ? data.bpm : NaN;
+                      const bpmStatus = data && typeof data.bpmStatus === 'string' ? data.bpmStatus : 'INVALID';
+                      document.getElementById('bpm').textContent = Number.isFinite(bpm) ? bpm.toFixed(1) : '--';
+                      document.getElementById('bpmStatus').textContent = bpmStatus;
                       document.getElementById('quality').textContent = data.quality.toFixed(3);
                       document.getElementById('fps').textContent = data.fps.toFixed(1);
                       document.getElementById('windowFill').textContent = data.windowFill.toFixed(1) + '%';
