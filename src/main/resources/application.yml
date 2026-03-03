@@ -1,0 +1,43 @@
+﻿spring:
+  application:
+    name: rppg-java
+
+rppg:
+  camera:
+    index: 0
+    width: 640
+    height: 480
+    target-fps: 30.0
+    preview-jpeg-fps: 10.0
+  window:
+    seconds: 30
+  hr:
+    min-hz: 0.8
+    max-hz: 2.5
+  csv:
+    path: ./logs/rppg.csv
+  signal:
+    method: AUTO
+    extractor-temporal-window: 32
+    quality-threshold: 0.20
+    max-step-per-update-bpm: 8.0
+  roi:
+    mode: MULTI
+    forehead-weight: 0.30
+    left-cheek-weight: 0.35
+    right-cheek-weight: 0.35
+  auto:
+    fallback-min-hold-seconds: 8.0
+    low-quality-updates-threshold: 3
+    switch-cooldown-seconds: 8.0
+    recovery-cooldown-seconds: 20.0
+    probe-window-seconds: 12.0
+    probe-valid-ratio-threshold: 0.60
+    probe-quality-margin: 0.0
+  warning:
+    no-face-seconds: 2.0
+    low-light-brightness-threshold: 45.0
+  motion:
+    threshold: 0.10
+    freeze-min-ms: 300
+    reset-after-ms: 3000

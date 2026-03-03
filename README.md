@@ -63,8 +63,8 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `NO_FACE`: no face detected for at least `2.0s` (`Config.noFaceWarningSeconds`)
   - `LOW_QUALITY`: signal window is full and quality is below `0.20` (`Config.qualityThreshold`)
   - `LOW_LIGHT`: ROI mean brightness is below `45.0` (`Config.lowLightBrightnessThreshold`)
-- `TOO_MUCH_MOTION`: normalized face center shift is above `0.08` or face area change is above `0.25`
-    (`Config.motionCenterThreshold`, `Config.motionAreaChangeThreshold`)
+- `TOO_MUCH_MOTION`: motion freeze is active based on `rppg.motion.threshold`,
+    `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
 - `--run` mode is headless (no web UI server).
 
 ## Web UI mode (manual)
@@ -92,6 +92,19 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - JPEG rendering/encoding is performed inside `RppgEngine` and throttled to about `10 fps` by default (`Config.previewJpegFps`).
 - If engine is not started, video endpoint returns `409` and UI shows a clear message.
 - The dashboard highlights active warnings in a dedicated panel.
+
+## Configuration (`application.yml`)
+- Runtime defaults are in `src/main/resources/application.yml` under `rppg.*`.
+- Key entries:
+  - `rppg.signal.method` (`AUTO|POS|CHROM|GREEN`)
+  - `rppg.hr.min-hz`, `rppg.hr.max-hz`
+  - `rppg.window.seconds`
+  - `rppg.signal.quality-threshold`, `rppg.signal.max-step-per-update-bpm`
+  - `rppg.motion.threshold`, `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
+  - `rppg.roi.mode`, `rppg.roi.forehead-weight`, `rppg.roi.left-cheek-weight`, `rppg.roi.right-cheek-weight`
+  - `rppg.auto.*` for fallback/probe thresholds and cooldowns
+- Existing CLI CSV override is preserved for run mode:
+  - `./gradlew bootRun --args="--run --csv=./logs/custom.csv"`
 
 ## Haar Cascade File
 - Required file path:

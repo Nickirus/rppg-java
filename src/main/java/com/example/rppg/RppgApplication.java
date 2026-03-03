@@ -2,10 +2,13 @@ package com.example.rppg;
 
 import com.example.rppg.app.CameraSmokeCheck;
 import com.example.rppg.app.Config;
+import com.example.rppg.app.RppgProperties;
 import com.example.rppg.app.RunModeProcessor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.ConfigurableApplicationContext;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -31,7 +34,7 @@ public class RppgApplication {
             }
             case RUN -> {
                 log.info("Selected mode: run");
-                Config config = Config.defaults();
+                Config config = loadConfigFromApplicationYaml(args);
                 if (options.csvPath() != null && !options.csvPath().isBlank()) {
                     config = config.withCsvPath(options.csvPath().trim());
                 }
@@ -78,6 +81,17 @@ public class RppgApplication {
                 }
             }
             return new CliOptions(mode, csvPath);
+        }
+    }
+
+    private static Config loadConfigFromApplicationYaml(String[] args) {
+        SpringApplication app = new SpringApplication(RppgApplication.class);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("spring.main.banner-mode", "off");
+        app.setDefaultProperties(properties);
+        try (ConfigurableApplicationContext context = app.run(args)) {
+            return context.getBean(RppgProperties.class).toConfig();
         }
     }
 }

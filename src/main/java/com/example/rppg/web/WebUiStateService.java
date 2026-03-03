@@ -2,6 +2,7 @@ package com.example.rppg.web;
 
 import com.example.rppg.app.Config;
 import com.example.rppg.app.RppgEngine;
+import com.example.rppg.app.RppgProperties;
 import com.example.rppg.app.RppgSnapshot;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -30,6 +31,7 @@ public class WebUiStateService {
     private static final DateTimeFormatter SESSION_FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final String CSV_HEADER = "timestamp,avgG,bpm,quality";
 
+    private final RppgProperties rppgProperties;
     private final Object engineLock = new Object();
     private volatile RppgEngine engine = new RppgEngine(Config.defaults());
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
@@ -41,6 +43,7 @@ public class WebUiStateService {
 
     @PostConstruct
     void init() {
+        engine = new RppgEngine(rppgProperties.toConfig());
         scheduler.scheduleAtFixedRate(this::broadcastLatestSnapshot, 0L, 1L, TimeUnit.SECONDS);
     }
 
@@ -68,7 +71,7 @@ public class WebUiStateService {
                 String sessionPath = nextSessionCsvPath();
                 ensureSessionCsvPrepared(sessionPath);
                 log.info("Session CSV created: {}", sessionPath);
-                Config sessionConfig = Config.defaults().withCsvPath(sessionPath);
+                Config sessionConfig = rppgProperties.toConfig().withCsvPath(sessionPath);
                 RppgEngine sessionEngine = new RppgEngine(sessionConfig);
                 sessionEngine.start();
                 engine = sessionEngine;
