@@ -10,6 +10,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 
 ## Run tests
 - `./gradlew test`
+- `./gradlew check` also runs a minimal quality gate that fails if `System.out` or `System.err` is used in `src/main`.
 
 ## Package and run JAR (Java 25)
 - Build a runnable Spring Boot jar:
