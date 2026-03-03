@@ -16,6 +16,13 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - `./gradlew test`
 - `./gradlew check` also runs a minimal quality gate that fails if `System.out` or `System.err` is used in `src/main`.
 
+## Offline session evaluator
+- Compute summary metrics from a session CSV:
+  - `./gradlew evaluateSession "-Pcsv=logs/session-YYYYMMDD-HHMMSS.csv"`
+- Report includes:
+  - `durationSec`, `validRatio`, `posUsageRatio`, `freezeRatio`
+  - `meanBpmValid`, `stdBpmValid`, `jumpRate`, `timeToStableSec`
+
 ## Package and run JAR (Java 25)
 - Build a runnable Spring Boot jar:
   - `./gradlew bootJar`

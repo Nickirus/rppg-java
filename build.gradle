@@ -69,3 +69,18 @@ tasks.named('bootRun') {
 tasks.named('bootJar') {
     mainClass = 'com.example.rppg.RppgApplication'
 }
+
+tasks.register('evaluateSession', JavaExec) {
+    group = 'verification'
+    description = 'Compute offline metrics for a session CSV: ./gradlew evaluateSession -Pcsv=logs/session-....csv'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.example.rppg.tools.SessionEvaluator'
+    if (project.hasProperty('csv')) {
+        args project.property('csv')
+    }
+    doFirst {
+        if (!project.hasProperty('csv')) {
+            throw new GradleException("Missing CSV path. Use: ./gradlew evaluateSession -Pcsv=<path/to/session.csv>")
+        }
+    }
+}
