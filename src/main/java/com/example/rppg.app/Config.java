@@ -1,6 +1,7 @@
 package com.example.rppg.app;
 
 import com.example.rppg.vision.RoiMode;
+import com.example.signal.QualityMode;
 import com.example.signal.SignalMethod;
 
 public record Config(
@@ -13,6 +14,7 @@ public record Config(
         double hrMinHz,
         double hrMaxHz,
         String csvPath,
+        QualityMode qualityMode,
         double qualityThreshold,
         double maxStepPerUpdateBpm,
         boolean temporalNormalizationEnabled,
@@ -47,6 +49,7 @@ public record Config(
                 0.8,
                 2.5,
                 "./logs/rppg.csv",
+                QualityMode.SNR,
                 0.20,
                 8.0,
                 true,
@@ -83,6 +86,7 @@ public record Config(
                 hrMinHz,
                 hrMaxHz,
                 value,
+                qualityMode,
                 qualityThreshold,
                 maxStepPerUpdateBpm,
                 temporalNormalizationEnabled,

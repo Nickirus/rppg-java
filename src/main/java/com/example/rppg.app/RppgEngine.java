@@ -679,11 +679,12 @@ public final class RppgEngine {
                     if (lastBpmUpdateNs == Long.MIN_VALUE || estimateNowNs - lastBpmUpdateNs >= BPM_UPDATE_INTERVAL_NS) {
                         double[] windowSignal = signalWindow.toArray();
                         HeartRateEstimator.Result result = estimator.estimate(windowSignal);
-                        double quality = SignalQualityScorer.peakDominance(
+                        double quality = SignalQualityScorer.quality(
                                 windowSignal,
                                 measuredFps,
                                 config.hrMinHz(),
                                 config.hrMaxHz(),
+                                config.qualityMode(),
                                 config.temporalNormalizationEnabled(),
                                 config.temporalNormalizationEps()
                         );

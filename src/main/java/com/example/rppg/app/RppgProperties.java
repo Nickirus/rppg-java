@@ -1,6 +1,7 @@
 package com.example.rppg.app;
 
 import com.example.rppg.vision.RoiMode;
+import com.example.signal.QualityMode;
 import com.example.signal.SignalMethod;
 import lombok.Getter;
 import lombok.Setter;
@@ -33,6 +34,7 @@ public class RppgProperties {
                 hr.minHz,
                 hr.maxHz,
                 csv.path,
+                signal.qualityMode,
                 signal.qualityThreshold,
                 signal.maxStepPerUpdateBpm,
                 signal.temporalNormalization.enabled,
@@ -90,6 +92,7 @@ public class RppgProperties {
     @Getter
     @Setter
     public static class Signal {
+        private QualityMode qualityMode = QualityMode.SNR;
         private SignalMethod method = SignalMethod.AUTO;
         private int extractorTemporalWindow = 32;
         private double qualityThreshold = 0.20;

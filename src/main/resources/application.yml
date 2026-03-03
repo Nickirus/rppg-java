@@ -17,6 +17,7 @@ rppg:
   csv:
     path: ./logs/rppg.csv
   signal:
+    quality-mode: SNR
     method: AUTO
     extractor-temporal-window: 32
     quality-threshold: 0.20
