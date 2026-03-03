@@ -286,6 +286,18 @@ public final class RppgEngine {
             long lastJpegEncodeNs = Long.MIN_VALUE;
             long jpegEncodeIntervalNs = computeJpegEncodeIntervalNs(config.previewJpegFps());
             EnumMap<SignalMethod, RppgSignalExtractor> extractors = createExtractors(config.extractorTemporalWindow());
+            SignalQualityScorer.Quality2Config quality2Config = new SignalQualityScorer.Quality2Config(
+                    config.quality2SnrLow(),
+                    config.quality2SnrHigh(),
+                    config.quality2MarginLow(),
+                    config.quality2MarginHigh(),
+                    config.quality2HarmonicEnabled(),
+                    config.quality2HarmonicLow(),
+                    config.quality2HarmonicHigh(),
+                    config.quality2SnrWeight(),
+                    config.quality2MarginWeight(),
+                    config.quality2HarmonicWeight()
+            );
             AutoSignalMethodSelector methodSelector = new AutoSignalMethodSelector(
                     config.autoFallbackMinHoldSeconds(),
                     config.autoLowQualityUpdatesThreshold(),
@@ -750,8 +762,19 @@ public final class RppgEngine {
                                 config.hrMaxHz(),
                                 config.qualityMode(),
                                 config.temporalNormalizationEnabled(),
-                                config.temporalNormalizationEps()
+                                config.temporalNormalizationEps(),
+                                quality2Config
                         );
+                        double quality2 = SignalQualityScorer.quality2(
+                                windowSignal,
+                                measuredFps,
+                                config.hrMinHz(),
+                                config.hrMaxHz(),
+                                config.temporalNormalizationEnabled(),
+                                config.temporalNormalizationEps(),
+                                quality2Config
+                        );
+                        double autoQuality = config.autoUseQuality2ForGating() ? quality2 : quality;
                         latestQuality = quality;
                         latestPeakHz = result.hz();
                         latestBpmDecision = stabilizer.update(result, quality, config.qualityThreshold());
@@ -781,7 +804,7 @@ public final class RppgEngine {
                         AutoSignalMethodSelector.Decision nextDecision = methodSelector.onBpmUpdate(
                                 config.signalMethod(),
                                 latestBpmDecision.status(),
-                                latestQuality,
+                                autoQuality,
                                 config.qualityThreshold(),
                                 estimateNowNs
                         );

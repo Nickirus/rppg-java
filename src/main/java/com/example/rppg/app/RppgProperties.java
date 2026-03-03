@@ -37,6 +37,16 @@ public class RppgProperties {
                 csv.path,
                 signal.qualityMode,
                 signal.qualityThreshold,
+                signal.quality2.snrLow,
+                signal.quality2.snrHigh,
+                signal.quality2.marginLow,
+                signal.quality2.marginHigh,
+                signal.quality2.harmonicEnabled,
+                signal.quality2.harmonicLow,
+                signal.quality2.harmonicHigh,
+                signal.quality2.snrWeight,
+                signal.quality2.marginWeight,
+                signal.quality2.harmonicWeight,
                 signal.maxStepPerUpdateBpm,
                 signal.temporalNormalization.enabled,
                 signal.temporalNormalization.eps,
@@ -53,6 +63,7 @@ public class RppgProperties {
                 auto.probeWindowSeconds,
                 auto.probeValidRatioThreshold,
                 auto.probeQualityMargin,
+                auto.useQuality2ForGating,
                 warning.noFaceSeconds,
                 warning.lowLightBrightnessThreshold,
                 motion.threshold,
@@ -98,8 +109,24 @@ public class RppgProperties {
         private SignalMethod method = SignalMethod.AUTO;
         private int extractorTemporalWindow = 32;
         private double qualityThreshold = 0.20;
+        private Quality2 quality2 = new Quality2();
         private double maxStepPerUpdateBpm = 8.0;
         private TemporalNormalization temporalNormalization = new TemporalNormalization();
+    }
+
+    @Getter
+    @Setter
+    public static class Quality2 {
+        private double snrLow = 2.0;
+        private double snrHigh = 8.0;
+        private double marginLow = 1.1;
+        private double marginHigh = 2.5;
+        private boolean harmonicEnabled = true;
+        private double harmonicLow = 0.05;
+        private double harmonicHigh = 0.35;
+        private double snrWeight = 0.6;
+        private double marginWeight = 0.3;
+        private double harmonicWeight = 0.1;
     }
 
     @Getter
@@ -128,6 +155,7 @@ public class RppgProperties {
         private double probeWindowSeconds = 12.0;
         private double probeValidRatioThreshold = 0.60;
         private double probeQualityMargin = 0.0;
+        private boolean useQuality2ForGating = true;
     }
 
     @Getter

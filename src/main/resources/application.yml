@@ -22,6 +22,17 @@ rppg:
     method: AUTO
     extractor-temporal-window: 32
     quality-threshold: 0.20
+    quality2:
+      snr-low: 2.0
+      snr-high: 8.0
+      margin-low: 1.1
+      margin-high: 2.5
+      harmonic-enabled: true
+      harmonic-low: 0.05
+      harmonic-high: 0.35
+      snr-weight: 0.6
+      margin-weight: 0.3
+      harmonic-weight: 0.1
     max-step-per-update-bpm: 8.0
     temporal-normalization:
       enabled: true
@@ -39,6 +50,7 @@ rppg:
     probe-window-seconds: 12.0
     probe-valid-ratio-threshold: 0.60
     probe-quality-margin: 0.0
+    use-quality2-for-gating: true
   warning:
     no-face-seconds: 2.0
     low-light-brightness-threshold: 45.0

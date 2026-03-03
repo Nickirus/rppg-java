@@ -109,14 +109,15 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - Runtime defaults are in `src/main/resources/application.yml` under `rppg.*`.
 - Key entries:
   - `rppg.signal.method` (`AUTO|POS|CHROM|GREEN`)
-  - `rppg.signal.quality-mode` (`SNR|PEAK_DOMINANCE`, default `SNR`)
+  - `rppg.signal.quality-mode` (`SNR|PEAK_DOMINANCE|QUALITY2`, default `SNR`)
+  - `rppg.signal.quality2.*` for SNR/margin/harmonic thresholds and weights used by `QUALITY2`
   - `rppg.signal.temporal-normalization.enabled`, `rppg.signal.temporal-normalization.eps`
   - `rppg.hr.min-hz`, `rppg.hr.max-hz`
   - `rppg.window.seconds`, `rppg.window.update-interval-ms`
   - `rppg.signal.quality-threshold`, `rppg.signal.max-step-per-update-bpm`
   - `rppg.motion.threshold`, `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
   - `rppg.roi.mode`, `rppg.roi.forehead-weight`, `rppg.roi.left-cheek-weight`, `rppg.roi.right-cheek-weight`
-  - `rppg.auto.*` for fallback/probe thresholds and cooldowns
+  - `rppg.auto.*` for fallback/probe thresholds and cooldowns (`rppg.auto.use-quality2-for-gating` enables `quality2` in AUTO decisions)
 - Existing CLI CSV override is preserved for run mode:
   - `./gradlew bootRun --args="--run --csv=./logs/custom.csv"`
 
