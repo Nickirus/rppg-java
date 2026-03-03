@@ -18,3 +18,6 @@
 - Keep changes small and targeted.
 - Update README when build/runtime assumptions change.
 - Respect `.aiignore` exclusions for generated and media artifacts.
+
+## Communication
+- After each fully completed iteration, always include a ready-to-use commit message as the last line of the response.
