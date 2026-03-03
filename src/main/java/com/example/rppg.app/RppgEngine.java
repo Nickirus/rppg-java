@@ -62,7 +62,6 @@ import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 public final class RppgEngine {
     private static final int DETECT_EVERY_N_FRAMES = 1;
     private static final int MIN_FRAMES_FOR_FPS_ESTIMATE = 15;
-    private static final long BPM_UPDATE_INTERVAL_NS = 2_000_000_000L;
     private static final long WARNING_LOG_INTERVAL_NS = 2_000_000_000L;
     private static final long DEBUG_FRAME_LOG_INTERVAL_NS = 2_000_000_000L;
     private static final String WARNING_NO_FACE = "NO_FACE";
@@ -283,6 +282,7 @@ public final class RppgEngine {
             HeartRateEstimator estimator = null;
             List<Double> warmupSamples = new ArrayList<>();
             long lastBpmUpdateNs = Long.MIN_VALUE;
+            long bpmUpdateIntervalNs = Math.max(1L, config.windowUpdateIntervalMs()) * 1_000_000L;
             long lastJpegEncodeNs = Long.MIN_VALUE;
             long jpegEncodeIntervalNs = computeJpegEncodeIntervalNs(config.previewJpegFps());
             EnumMap<SignalMethod, RppgSignalExtractor> extractors = createExtractors(config.extractorTemporalWindow());
@@ -676,7 +676,7 @@ public final class RppgEngine {
 
                 if (signalWindow.isFull()) {
                     long estimateNowNs = System.nanoTime();
-                    if (lastBpmUpdateNs == Long.MIN_VALUE || estimateNowNs - lastBpmUpdateNs >= BPM_UPDATE_INTERVAL_NS) {
+                    if (lastBpmUpdateNs == Long.MIN_VALUE || estimateNowNs - lastBpmUpdateNs >= bpmUpdateIntervalNs) {
                         double[] windowSignal = signalWindow.toArray();
                         HeartRateEstimator.Result result = estimator.estimate(windowSignal);
                         double quality = SignalQualityScorer.quality(

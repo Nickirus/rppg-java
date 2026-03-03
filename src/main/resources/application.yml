@@ -11,6 +11,7 @@ rppg:
     preview-jpeg-fps: 10.0
   window:
     seconds: 30
+    update-interval-ms: 2000
   hr:
     min-hz: 0.8
     max-hz: 2.5

@@ -105,7 +105,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `rppg.signal.quality-mode` (`SNR|PEAK_DOMINANCE`, default `SNR`)
   - `rppg.signal.temporal-normalization.enabled`, `rppg.signal.temporal-normalization.eps`
   - `rppg.hr.min-hz`, `rppg.hr.max-hz`
-  - `rppg.window.seconds`
+  - `rppg.window.seconds`, `rppg.window.update-interval-ms`
   - `rppg.signal.quality-threshold`, `rppg.signal.max-step-per-update-bpm`
   - `rppg.motion.threshold`, `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
   - `rppg.roi.mode`, `rppg.roi.forehead-weight`, `rppg.roi.left-cheek-weight`, `rppg.roi.right-cheek-weight`

@@ -31,6 +31,7 @@ public class RppgProperties {
                 camera.targetFps,
                 camera.previewJpegFps,
                 window.seconds,
+                window.updateIntervalMs,
                 hr.minHz,
                 hr.maxHz,
                 csv.path,
@@ -74,6 +75,7 @@ public class RppgProperties {
     @Setter
     public static class Window {
         private int seconds = 30;
+        private long updateIntervalMs = 2000L;
     }
 
     @Getter
