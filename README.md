@@ -11,6 +11,14 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 ## Run tests
 - `./gradlew test`
 
+## Package and run JAR (Java 25)
+- Build a runnable Spring Boot jar:
+  - `./gradlew bootJar`
+- Run packaged app:
+  - `java -jar build/libs/rppg-java-0.1.0-SNAPSHOT.jar --web`
+  - You can also use `--run` or `--camera-check`.
+- Use Java 25 runtime to run the packaged jar.
+
 ## Lombok
 - Lombok is enabled for main and test source sets via annotation processing.
 - Repo-level `lombok.config` uses conservative defaults and flags risky usage such as `@SneakyThrows`.
@@ -96,3 +104,4 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - No camera access is required for tests.
 - Signal-processing tests use synthetic sine signals.
 - Warning flags are best-effort engineering heuristics, not medical diagnostics.
+- JavaCV uses native platform binaries (camera/FFmpeg/OpenCV). `javacv-platform` bundles common natives, but camera behavior is still OS/driver dependent and must be validated on each target platform.
