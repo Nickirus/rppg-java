@@ -509,7 +509,13 @@ public final class RppgEngine {
                 if (signalWindow == null && capturedFrames >= MIN_FRAMES_FOR_FPS_ESTIMATE) {
                     signalWindowCapacity = Math.max(10, (int) Math.round(config.windowSeconds() * measuredFps));
                     signalWindow = new SignalWindow(signalWindowCapacity);
-                    estimator = new HeartRateEstimator(measuredFps, config.hrMinHz(), config.hrMaxHz());
+                    estimator = new HeartRateEstimator(
+                            measuredFps,
+                            config.hrMinHz(),
+                            config.hrMaxHz(),
+                            config.temporalNormalizationEnabled(),
+                            config.temporalNormalizationEps()
+                    );
                     for (double sample : warmupSamples) {
                         signalWindow.add(sample);
                     }
@@ -677,7 +683,9 @@ public final class RppgEngine {
                                 windowSignal,
                                 measuredFps,
                                 config.hrMinHz(),
-                                config.hrMaxHz()
+                                config.hrMaxHz(),
+                                config.temporalNormalizationEnabled(),
+                                config.temporalNormalizationEps()
                         );
                         latestQuality = quality;
                         latestBpmDecision = stabilizer.update(result, quality, config.qualityThreshold());

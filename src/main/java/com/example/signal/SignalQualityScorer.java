@@ -2,11 +2,23 @@ package com.example.signal;
 
 public final class SignalQualityScorer {
     private static final double EPS = 1e-12;
+    private static final double DEFAULT_TEMPORAL_NORMALIZATION_EPS = 1e-6;
 
     private SignalQualityScorer() {
     }
 
     public static double peakDominance(double[] rawSignal, double fsHz, double minHz, double maxHz) {
+        return peakDominance(rawSignal, fsHz, minHz, maxHz, true, DEFAULT_TEMPORAL_NORMALIZATION_EPS);
+    }
+
+    public static double peakDominance(
+            double[] rawSignal,
+            double fsHz,
+            double minHz,
+            double maxHz,
+            boolean temporalNormalizationEnabled,
+            double temporalNormalizationEps
+    ) {
         if (rawSignal == null || rawSignal.length < 3) {
             return 0.0;
         }
@@ -19,7 +31,11 @@ public final class SignalQualityScorer {
             }
         }
 
-        double[] x = Preprocessor.detrendAndNormalize(rawSignal);
+        double[] x = rawSignal.clone();
+        if (temporalNormalizationEnabled) {
+            x = Preprocessor.temporalNormalizeByMean(x, temporalNormalizationEps);
+        }
+        x = Preprocessor.detrendAndNormalize(x);
         x = Preprocessor.bandPass(x, fsHz, minHz, maxHz);
         Preprocessor.applyHannWindowInPlace(x);
         double[] power = FftPowerSpectrum.powerSpectrum(x);

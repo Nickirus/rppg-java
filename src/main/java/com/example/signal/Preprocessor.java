@@ -1,7 +1,32 @@
 package com.example.signal;
 
 public final class Preprocessor {
+    private static final double DEFAULT_TEMPORAL_NORMALIZATION_EPS = 1e-6;
+
     private Preprocessor() {
+    }
+
+    public static double[] temporalNormalizeByMean(double[] x, double eps) {
+        if (x == null) {
+            return null;
+        }
+        if (x.length == 0) {
+            return new double[0];
+        }
+
+        double safeEps = (!Double.isFinite(eps) || eps <= 0.0) ? DEFAULT_TEMPORAL_NORMALIZATION_EPS : eps;
+        double mean = 0.0;
+        for (double v : x) {
+            mean += v;
+        }
+        mean /= x.length;
+
+        double denom = Math.max(safeEps, mean);
+        double[] y = new double[x.length];
+        for (int i = 0; i < x.length; i++) {
+            y[i] = (x[i] - mean) / denom;
+        }
+        return y;
     }
 
     public static double[] detrendAndNormalize(double[] x) {

@@ -102,6 +102,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - Runtime defaults are in `src/main/resources/application.yml` under `rppg.*`.
 - Key entries:
   - `rppg.signal.method` (`AUTO|POS|CHROM|GREEN`)
+  - `rppg.signal.temporal-normalization.enabled`, `rppg.signal.temporal-normalization.eps`
   - `rppg.hr.min-hz`, `rppg.hr.max-hz`
   - `rppg.window.seconds`
   - `rppg.signal.quality-threshold`, `rppg.signal.max-step-per-update-bpm`

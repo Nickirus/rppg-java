@@ -8,8 +8,20 @@ public class HeartRateEstimator {
     private final double fsHz;
     private final double minHz;
     private final double maxHz;
+    private final boolean temporalNormalizationEnabled;
+    private final double temporalNormalizationEps;
 
     public HeartRateEstimator(double fsHz, double minHz, double maxHz) {
+        this(fsHz, minHz, maxHz, true, 1e-6);
+    }
+
+    public HeartRateEstimator(
+            double fsHz,
+            double minHz,
+            double maxHz,
+            boolean temporalNormalizationEnabled,
+            double temporalNormalizationEps
+    ) {
         if (!Double.isFinite(fsHz) || fsHz <= 0.0) {
             throw new IllegalArgumentException("fsHz must be > 0");
         }
@@ -19,6 +31,8 @@ public class HeartRateEstimator {
         this.fsHz = fsHz;
         this.minHz = minHz;
         this.maxHz = maxHz;
+        this.temporalNormalizationEnabled = temporalNormalizationEnabled;
+        this.temporalNormalizationEps = temporalNormalizationEps;
     }
 
     public Result estimate(double[] rawSignal) {
@@ -31,7 +45,11 @@ public class HeartRateEstimator {
             }
         }
 
-        double[] x = Preprocessor.detrendAndNormalize(rawSignal);
+        double[] x = rawSignal.clone();
+        if (temporalNormalizationEnabled) {
+            x = Preprocessor.temporalNormalizeByMean(x, temporalNormalizationEps);
+        }
+        x = Preprocessor.detrendAndNormalize(x);
         x = Preprocessor.bandPass(x, fsHz, minHz, maxHz);
         double signalEnergy = 0.0;
         for (double v : x) {

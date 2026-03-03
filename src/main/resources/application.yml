@@ -21,6 +21,9 @@ rppg:
     extractor-temporal-window: 32
     quality-threshold: 0.20
     max-step-per-update-bpm: 8.0
+    temporal-normalization:
+      enabled: true
+      eps: 1.0e-6
   roi:
     mode: MULTI
     forehead-weight: 0.30

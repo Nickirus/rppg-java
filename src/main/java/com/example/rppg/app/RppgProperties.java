@@ -35,6 +35,8 @@ public class RppgProperties {
                 csv.path,
                 signal.qualityThreshold,
                 signal.maxStepPerUpdateBpm,
+                signal.temporalNormalization.enabled,
+                signal.temporalNormalization.eps,
                 signal.method,
                 roi.mode,
                 roi.foreheadWeight,
@@ -92,6 +94,14 @@ public class RppgProperties {
         private int extractorTemporalWindow = 32;
         private double qualityThreshold = 0.20;
         private double maxStepPerUpdateBpm = 8.0;
+        private TemporalNormalization temporalNormalization = new TemporalNormalization();
+    }
+
+    @Getter
+    @Setter
+    public static class TemporalNormalization {
+        private boolean enabled = true;
+        private double eps = 1e-6;
     }
 
     @Getter
