@@ -8,6 +8,10 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - Spring Boot
 - JUnit 5 (tests only)
 
+## Docs
+- [Architecture](docs/architecture.md)
+- [Algorithm](docs/algorithm.md)
+
 ## Run tests
 - `./gradlew test`
 - `./gradlew check` also runs a minimal quality gate that fails if `System.out` or `System.err` is used in `src/main`.
