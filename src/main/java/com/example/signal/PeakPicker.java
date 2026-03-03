@@ -26,4 +26,33 @@ public final class PeakPicker {
     public static double binToHz(int k, int n, double fsHz) {
         return (k * fsHz) / n;
     }
+
+    public static double binToHz(double k, int n, double fsHz) {
+        return (k * fsHz) / n;
+    }
+
+    public static double refineParabolicBin(double[] power, int kPeak) {
+        if (power == null || kPeak <= 0 || kPeak >= power.length - 1) {
+            return kPeak;
+        }
+
+        double left = power[kPeak - 1];
+        double center = power[kPeak];
+        double right = power[kPeak + 1];
+        if (!Double.isFinite(left) || !Double.isFinite(center) || !Double.isFinite(right)) {
+            return kPeak;
+        }
+
+        double denominator = left - (2.0 * center) + right;
+        if (Math.abs(denominator) < 1e-12) {
+            return kPeak;
+        }
+
+        double delta = 0.5 * (left - right) / denominator;
+        if (!Double.isFinite(delta)) {
+            return kPeak;
+        }
+        delta = Math.max(-0.5, Math.min(0.5, delta));
+        return kPeak + delta;
+    }
 }

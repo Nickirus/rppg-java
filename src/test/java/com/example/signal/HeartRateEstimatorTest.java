@@ -57,4 +57,30 @@ class HeartRateEstimatorTest {
         assertTrue(r.valid(), r.reason());
         assertEquals(72.0, r.bpm(), 4.0);
     }
+
+    @Test
+    void parabolicInterpolation_improvesFrequencyForBetweenBinSine() {
+        double fs = 30.0;
+        int n = 256;
+        double freq = 1.37;
+
+        double[] x = new double[n];
+        for (int i = 0; i < n; i++) {
+            double t = i / fs;
+            x[i] = Math.sin(2.0 * Math.PI * freq * t);
+        }
+
+        double[] y = Preprocessor.detrendAndNormalize(x);
+        y = Preprocessor.bandPass(y, fs, 0.8, 2.5);
+        Preprocessor.applyHannWindowInPlace(y);
+
+        double[] power = FftPowerSpectrum.powerSpectrum(y);
+        int kPeak = PeakPicker.argMaxInBand(power, fs, 0.8, 2.5);
+        double hzInteger = PeakPicker.binToHz(kPeak, n, fs);
+        double hzRefined = PeakPicker.binToHz(PeakPicker.refineParabolicBin(power, kPeak), n, fs);
+
+        double integerError = Math.abs(hzInteger - freq);
+        double refinedError = Math.abs(hzRefined - freq);
+        assertTrue(refinedError < integerError, "Expected refined frequency to be closer than integer bin");
+    }
 }

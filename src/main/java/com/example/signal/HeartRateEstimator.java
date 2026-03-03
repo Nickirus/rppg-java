@@ -71,7 +71,8 @@ public class HeartRateEstimator {
             return Result.invalid("Peak power too low");
         }
 
-        double hz = PeakPicker.binToHz(k, n, fsHz);
+        double refinedBin = PeakPicker.refineParabolicBin(p, k);
+        double hz = PeakPicker.binToHz(refinedBin, n, fsHz);
         if (!Double.isFinite(hz) || hz < minHz || hz > maxHz) {
             return Result.invalid("Peak frequency out of band");
         }
