@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class WebUiStateService {
     private static final DateTimeFormatter SESSION_FILE_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-    private static final String CSV_HEADER = "timestamp,avgG,bpm,quality";
+    private static final String CSV_HEADER = "timestamp,avgG,bpm,quality,rawBpm,bpmStatus,activeSignalMethod,autoModeState,motionScore,processingStatus,windowFill,fps,peakHz";
 
     private final RppgProperties rppgProperties;
     private final Object engineLock = new Object();

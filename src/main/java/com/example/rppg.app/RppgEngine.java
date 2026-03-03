@@ -301,8 +301,10 @@ public final class RppgEngine {
             BpmStabilizer.Decision latestBpmDecision = BpmStabilizer.Decision.invalid();
             double latestQuality = 0.0;
             double latestAvgG = 0.0;
+            double latestPeakHz = Double.NaN;
             double latestMotionScore = 0.0;
             ProcessingStatus latestProcessingStatus = ProcessingStatus.NORMAL;
+            long lastCsvLogNs = Long.MIN_VALUE;
             WarningLogState warningLogState = new WarningLogState();
 
             log.info("Engine loop started. sessionCsv={}", config.csvPath());
@@ -397,6 +399,22 @@ public final class RppgEngine {
                             fillPercent,
                             warnings
                     );
+                    lastCsvLogNs = maybeLogCsvOnTick(
+                            csvLogger,
+                            nowNs,
+                            lastCsvLogNs,
+                            bpmUpdateIntervalNs,
+                            latestAvgG,
+                            latestBpmDecision,
+                            latestQuality,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            latestMotionScore,
+                            latestProcessingStatus,
+                            fillPercent,
+                            measuredFps,
+                            latestPeakHz
+                    );
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(
                                 bgr,
@@ -463,6 +481,22 @@ public final class RppgEngine {
                             measuredFps,
                             fillPercent,
                             warnings
+                    );
+                    lastCsvLogNs = maybeLogCsvOnTick(
+                            csvLogger,
+                            nowNs,
+                            lastCsvLogNs,
+                            bpmUpdateIntervalNs,
+                            latestAvgG,
+                            latestBpmDecision,
+                            latestQuality,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            latestMotionScore,
+                            latestProcessingStatus,
+                            fillPercent,
+                            measuredFps,
+                            latestPeakHz
                     );
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(
@@ -535,7 +569,6 @@ public final class RppgEngine {
                     if (!motionState.frozen()) {
                         warmupSamples.add(extractedSample);
                     }
-                    logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), 0.0);
                     List<String> warnings = buildWarnings(
                             false,
                             0.0,
@@ -574,6 +607,22 @@ public final class RppgEngine {
                             0.0,
                             warnings
                     );
+                    lastCsvLogNs = maybeLogCsvOnTick(
+                            csvLogger,
+                            nowNs,
+                            lastCsvLogNs,
+                            bpmUpdateIntervalNs,
+                            avgG,
+                            latestBpmDecision,
+                            0.0,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            latestMotionScore,
+                            latestProcessingStatus,
+                            0.0,
+                            measuredFps,
+                            latestPeakHz
+                    );
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(
                                 bgr,
@@ -605,7 +654,6 @@ public final class RppgEngine {
                     fillPercent = computeFillPercent(signalWindow, signalWindowCapacity);
                     latestBpmDecision = stabilizer.holdCurrent();
                     latestQuality = 0.0;
-                    logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), latestQuality);
                     List<String> warnings = buildWarnings(
                             signalWindow.isFull(),
                             latestQuality,
@@ -643,6 +691,22 @@ public final class RppgEngine {
                             measuredFps,
                             fillPercent,
                             warnings
+                    );
+                    lastCsvLogNs = maybeLogCsvOnTick(
+                            csvLogger,
+                            nowNs,
+                            lastCsvLogNs,
+                            bpmUpdateIntervalNs,
+                            avgG,
+                            latestBpmDecision,
+                            latestQuality,
+                            autoDecision.activeMethod(),
+                            autoDecision.autoModeState(),
+                            latestMotionScore,
+                            latestProcessingStatus,
+                            fillPercent,
+                            measuredFps,
+                            latestPeakHz
                     );
                     if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                         renderAndStoreJpegFrame(
@@ -689,6 +753,7 @@ public final class RppgEngine {
                                 config.temporalNormalizationEps()
                         );
                         latestQuality = quality;
+                        latestPeakHz = result.hz();
                         latestBpmDecision = stabilizer.update(result, quality, config.qualityThreshold());
                         if (latestBpmDecision.status() == BpmStatus.VALID) {
                             log.debug(
@@ -738,11 +803,9 @@ public final class RppgEngine {
                         autoDecision = nextDecision;
                         lastBpmUpdateNs = estimateNowNs;
                     }
-                    logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), latestQuality);
                 } else {
                     latestBpmDecision = stabilizer.holdCurrent();
                     latestQuality = 0.0;
-                    logCsv(csvLogger, Instant.now(), avgG, bpmForCsv(latestBpmDecision), 0.0);
                 }
 
                 List<String> warnings = buildWarnings(
@@ -782,6 +845,22 @@ public final class RppgEngine {
                         measuredFps,
                         fillPercent,
                         warnings
+                );
+                lastCsvLogNs = maybeLogCsvOnTick(
+                        csvLogger,
+                        nowNs,
+                        lastCsvLogNs,
+                        bpmUpdateIntervalNs,
+                        avgG,
+                        latestBpmDecision,
+                        latestQuality,
+                        autoDecision.activeMethod(),
+                        autoDecision.autoModeState(),
+                        latestMotionScore,
+                        latestProcessingStatus,
+                        fillPercent,
+                        measuredFps,
+                        latestPeakHz
                 );
                 if (shouldEncodeJpeg(jpegEncodeIntervalNs, lastJpegEncodeNs)) {
                     renderAndStoreJpegFrame(
@@ -951,9 +1030,45 @@ public final class RppgEngine {
         ));
     }
 
-    private void logCsv(CsvSignalLogger logger, Instant timestamp, double avgG, Double bpm, double quality) throws IOException {
-        logger.log(timestamp, avgG, bpm, quality);
+    private long maybeLogCsvOnTick(
+            CsvSignalLogger logger,
+            long nowNs,
+            long lastCsvLogNs,
+            long logIntervalNs,
+            double avgG,
+            BpmStabilizer.Decision bpmDecision,
+            double quality,
+            SignalMethod activeSignalMethod,
+            AutoModeState autoModeState,
+            double motionScore,
+            ProcessingStatus processingStatus,
+            double windowFill,
+            double fps,
+            double peakHz
+    ) throws IOException {
+        if (logger == null) {
+            return lastCsvLogNs;
+        }
+        if (lastCsvLogNs != Long.MIN_VALUE && nowNs - lastCsvLogNs < logIntervalNs) {
+            return lastCsvLogNs;
+        }
+        logger.log(
+                Instant.now(),
+                avgG,
+                bpmForCsv(bpmDecision),
+                quality,
+                bpmDecision == null ? Double.NaN : bpmDecision.rawBpm(),
+                bpmDecision == null ? BpmStatus.INVALID : bpmDecision.status(),
+                activeSignalMethod,
+                autoModeState,
+                motionScore,
+                processingStatus,
+                windowFill,
+                fps,
+                peakHz
+        );
         sessionRowCount.incrementAndGet();
+        return nowNs;
     }
 
     private void logWarningsAndDebug(
