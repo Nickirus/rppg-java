@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.Locale;
 
 final class CsvSignalLogger implements Closeable {
-    static final String HEADER = "timestamp,avgG,bpm,quality,rawBpm,bpmStatus,activeSignalMethod,autoModeState,motionScore,smoothedRectDelta,processingStatus,windowFill,fps,peakHz";
+    static final String HEADER = "timestamp,avgG,bpm,quality,rawBpm,bpmStatus,activeSignalMethod,autoModeState,motionScore,smoothedRectDelta,skinCoverage,processingStatus,windowFill,fps,peakHz";
 
     private final BufferedWriter writer;
 
@@ -56,6 +56,7 @@ final class CsvSignalLogger implements Closeable {
             AutoModeState autoModeState,
             double motionScore,
             double smoothedRectDelta,
+            double skinCoverage,
             ProcessingStatus processingStatus,
             double windowFill,
             double fps,
@@ -66,7 +67,7 @@ final class CsvSignalLogger implements Closeable {
         String peakHzField = formatOptionalNumber(peakHz);
         String line = String.format(
                 Locale.US,
-                "%s,%.6f,%s,%.6f,%s,%s,%s,%s,%.6f,%.6f,%s,%.6f,%.6f,%s",
+                "%s,%.6f,%s,%.6f,%s,%s,%s,%s,%.6f,%.6f,%.6f,%s,%.6f,%.6f,%s",
                 timestamp.toString(),
                 avgG,
                 bpmField,
@@ -77,6 +78,7 @@ final class CsvSignalLogger implements Closeable {
                 autoModeState == null ? "" : autoModeState.name(),
                 motionScore,
                 smoothedRectDelta,
+                skinCoverage,
                 processingStatus == null ? "" : processingStatus.name(),
                 windowFill,
                 fps,

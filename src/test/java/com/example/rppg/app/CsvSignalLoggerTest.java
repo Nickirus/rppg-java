@@ -34,6 +34,7 @@ class CsvSignalLoggerTest {
                     AutoModeState.STABLE,
                     0.03,
                     0.01,
+                    0.72,
                     ProcessingStatus.NORMAL,
                     100.0,
                     29.8,
@@ -52,6 +53,7 @@ class CsvSignalLoggerTest {
         assertTrue(header.contains("autoModeState"));
         assertTrue(header.contains("motionScore"));
         assertTrue(header.contains("smoothedRectDelta"));
+        assertTrue(header.contains("skinCoverage"));
         assertTrue(header.contains("processingStatus"));
         assertTrue(header.contains("windowFill"));
         assertTrue(header.contains("fps"));

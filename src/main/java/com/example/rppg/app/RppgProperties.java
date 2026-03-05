@@ -19,6 +19,7 @@ public class RppgProperties {
     private Hr hr = new Hr();
     private Csv csv = new Csv();
     private Signal signal = new Signal();
+    private Skin skin = new Skin();
     private Roi roi = new Roi();
     private Auto auto = new Auto();
     private Warning warning = new Warning();
@@ -50,6 +51,9 @@ public class RppgProperties {
                 signal.quality2.snrWeight,
                 signal.quality2.marginWeight,
                 signal.quality2.harmonicWeight,
+                skin.enabled,
+                skin.minCoverage,
+                skin.fallbackToUnmasked,
                 signal.maxStepPerUpdateBpm,
                 signal.temporalNormalization.enabled,
                 signal.temporalNormalization.eps,
@@ -128,6 +132,14 @@ public class RppgProperties {
         private Quality2 quality2 = new Quality2();
         private double maxStepPerUpdateBpm = 8.0;
         private TemporalNormalization temporalNormalization = new TemporalNormalization();
+    }
+
+    @Getter
+    @Setter
+    public static class Skin {
+        private boolean enabled = true;
+        private double minCoverage = 0.25;
+        private boolean fallbackToUnmasked = true;
     }
 
     @Getter

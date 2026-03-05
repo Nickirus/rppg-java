@@ -41,6 +41,10 @@ rppg:
     temporal-normalization:
       enabled: true
       eps: 1.0e-6
+  skin:
+    enabled: true
+    min-coverage: 0.25
+    fallback-to-unmasked: true
   roi:
     mode: MULTI
     forehead-weight: 0.30

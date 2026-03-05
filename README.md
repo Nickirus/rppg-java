@@ -75,6 +75,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `NO_FACE`: no face detected for at least `2.0s` (`Config.noFaceWarningSeconds`)
   - `LOW_QUALITY`: signal window is full and quality is below `0.20` (`Config.qualityThreshold`)
   - `LOW_LIGHT`: ROI mean brightness is below `45.0` (`Config.lowLightBrightnessThreshold`)
+  - `LOW_SKIN_COVERAGE`: skin pixel coverage in ROI is below `rppg.skin.min-coverage`
 - `TOO_MUCH_MOTION`: motion freeze is active based on `rppg.motion.threshold`,
     `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
 - `--run` mode is headless (no web UI server).
@@ -116,6 +117,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `rppg.face.smoothing.alpha`, `rppg.face.smoothing.max-step`
   - `rppg.window.seconds`, `rppg.window.update-interval-ms`
   - `rppg.signal.quality-threshold`, `rppg.signal.max-step-per-update-bpm`
+  - `rppg.skin.enabled`, `rppg.skin.min-coverage`, `rppg.skin.fallback-to-unmasked`
   - `rppg.motion.threshold`, `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
   - `rppg.roi.mode`, `rppg.roi.forehead-weight`, `rppg.roi.left-cheek-weight`, `rppg.roi.right-cheek-weight`
   - `rppg.auto.*` for fallback/probe thresholds and cooldowns (`rppg.auto.use-quality2-for-gating` enables `quality2` in AUTO decisions)

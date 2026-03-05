@@ -4,6 +4,7 @@ import com.example.rppg.vision.FaceRectSmoother;
 import com.example.rppg.vision.FaceTracker;
 import com.example.rppg.vision.RoiMode;
 import com.example.rppg.vision.RoiSelector;
+import com.example.rppg.vision.SkinMaskRoiAnalyzer;
 import com.example.signal.AutoModeState;
 import com.example.signal.AutoSignalMethodSelector;
 import com.example.signal.BpmStabilizer;
@@ -68,6 +69,7 @@ public final class RppgEngine {
     private static final String WARNING_NO_FACE = "NO_FACE";
     private static final String WARNING_LOW_QUALITY = "LOW_QUALITY";
     private static final String WARNING_LOW_LIGHT = "LOW_LIGHT";
+    private static final String WARNING_LOW_SKIN_COVERAGE = "LOW_SKIN_COVERAGE";
     private static final String WARNING_TOO_MUCH_MOTION = "TOO_MUCH_MOTION";
     private static final Path CASCADE_PATH =
             Paths.get("src", "main", "resources", "cascades", "haarcascade_frontalface_default.xml");
@@ -107,6 +109,7 @@ public final class RppgEngine {
                     0.0,
                     0.0,
                     0.0,
+                    1.0,
                     0.0,
                     List.of()
             );
@@ -163,6 +166,7 @@ public final class RppgEngine {
                 config.roiMode(),
                 snapshotRoiWeights(),
                 0.0,
+                1.0,
                 0.0,
                 0.0,
                 List.of(),
@@ -204,6 +208,7 @@ public final class RppgEngine {
                     0.0,
                     0.0,
                     0.0,
+                    0.0,
                     List.of("ERROR_MISSING_CASCADE")
             );
             return;
@@ -223,6 +228,7 @@ public final class RppgEngine {
                     null,
                     0.0,
                     ProcessingStatus.NORMAL,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -253,6 +259,7 @@ public final class RppgEngine {
                     null,
                     0.0,
                     ProcessingStatus.NORMAL,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -319,6 +326,7 @@ public final class RppgEngine {
             double latestQuality = 0.0;
             double latestAvgG = 0.0;
             double latestPeakHz = Double.NaN;
+            double latestSkinCoverage = 1.0;
             double latestMotionScore = 0.0;
             double latestSmoothedRectDelta = 0.0;
             ProcessingStatus latestProcessingStatus = ProcessingStatus.NORMAL;
@@ -388,9 +396,11 @@ public final class RppgEngine {
 
                 double fillPercent = computeFillPercent(signalWindow, signalWindowCapacity);
                 if (lastFace == null) {
+                    latestSkinCoverage = 0.0;
                     List<String> warnings = buildWarnings(
                             false,
                             latestQuality,
+                            null,
                             null,
                             nowNs,
                             lastFaceDetectedNs,
@@ -404,6 +414,7 @@ public final class RppgEngine {
                             fillPercent,
                             latestBpmDecision.bpm(),
                             latestQuality,
+                            latestSkinCoverage,
                             latestBpmDecision.status(),
                             latestProcessingStatus,
                             latestMotionScore,
@@ -422,6 +433,7 @@ public final class RppgEngine {
                             latestProcessingStatus,
                             latestMotionScore,
                             latestQuality,
+                            latestSkinCoverage,
                             measuredFps,
                             fillPercent,
                             warnings
@@ -438,6 +450,7 @@ public final class RppgEngine {
                             autoDecision.autoModeState(),
                             latestMotionScore,
                             latestSmoothedRectDelta,
+                            latestSkinCoverage,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -480,9 +493,11 @@ public final class RppgEngine {
                 );
                 FrameRois frameRois = roiRectsForFace(roiFaceRect, bgr.cols(), bgr.rows(), config.roiMode());
                 if (!frameRois.isUsable(config.roiMode())) {
+                    latestSkinCoverage = 0.0;
                     List<String> warnings = buildWarnings(
                             false,
                             latestQuality,
+                            null,
                             null,
                             nowNs,
                             lastFaceDetectedNs,
@@ -496,6 +511,7 @@ public final class RppgEngine {
                             fillPercent,
                             latestBpmDecision.bpm(),
                             latestQuality,
+                            latestSkinCoverage,
                             latestBpmDecision.status(),
                             latestProcessingStatus,
                             latestMotionScore,
@@ -514,6 +530,7 @@ public final class RppgEngine {
                             latestProcessingStatus,
                             latestMotionScore,
                             latestQuality,
+                            latestSkinCoverage,
                             measuredFps,
                             fillPercent,
                             warnings
@@ -530,6 +547,7 @@ public final class RppgEngine {
                             autoDecision.autoModeState(),
                             latestMotionScore,
                             latestSmoothedRectDelta,
+                            latestSkinCoverage,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -562,14 +580,19 @@ public final class RppgEngine {
                     continue;
                 }
 
-                RoiStats roiStats = extractCombinedRoiStats(
+                CombinedRoiSample roiSample = extractCombinedRoiStats(
                         bgr,
                         frameRois,
                         config.roiMode(),
                         config.roiForeheadWeight(),
                         config.roiLeftCheekWeight(),
-                        config.roiRightCheekWeight()
+                        config.roiRightCheekWeight(),
+                        config.skinEnabled(),
+                        config.skinMinCoverage(),
+                        config.skinFallbackToUnmasked()
                 );
+                RoiStats roiStats = roiSample.roiStats();
+                latestSkinCoverage = roiSample.skinCoverage();
                 double avgG = roiStats.meanG();
                 double brightness = roiStats.meanBrightness();
                 double extractedSample = sanitizeSignalSample(
@@ -610,6 +633,7 @@ public final class RppgEngine {
                             false,
                             0.0,
                             brightness,
+                            latestSkinCoverage,
                             nowNs,
                             lastFaceDetectedNs,
                             latestProcessingStatus
@@ -622,6 +646,7 @@ public final class RppgEngine {
                             0.0,
                             0.0,
                             0.0,
+                            latestSkinCoverage,
                             BpmStatus.INVALID,
                             latestProcessingStatus,
                             latestMotionScore,
@@ -640,6 +665,7 @@ public final class RppgEngine {
                             latestProcessingStatus,
                             latestMotionScore,
                             0.0,
+                            latestSkinCoverage,
                             measuredFps,
                             0.0,
                             warnings
@@ -656,6 +682,7 @@ public final class RppgEngine {
                             autoDecision.autoModeState(),
                             latestMotionScore,
                             latestSmoothedRectDelta,
+                            latestSkinCoverage,
                             latestProcessingStatus,
                             0.0,
                             measuredFps,
@@ -696,6 +723,7 @@ public final class RppgEngine {
                             signalWindow.isFull(),
                             latestQuality,
                             brightness,
+                            latestSkinCoverage,
                             nowNs,
                             lastFaceDetectedNs,
                             latestProcessingStatus
@@ -708,6 +736,7 @@ public final class RppgEngine {
                             fillPercent,
                             latestBpmDecision.bpm(),
                             latestQuality,
+                            latestSkinCoverage,
                             latestBpmDecision.status(),
                             latestProcessingStatus,
                             latestMotionScore,
@@ -726,6 +755,7 @@ public final class RppgEngine {
                             latestProcessingStatus,
                             latestMotionScore,
                             latestQuality,
+                            latestSkinCoverage,
                             measuredFps,
                             fillPercent,
                             warnings
@@ -742,6 +772,7 @@ public final class RppgEngine {
                             autoDecision.autoModeState(),
                             latestMotionScore,
                             latestSmoothedRectDelta,
+                            latestSkinCoverage,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -862,6 +893,7 @@ public final class RppgEngine {
                         signalWindow.isFull(),
                         latestQuality,
                         brightness,
+                        latestSkinCoverage,
                         nowNs,
                         lastFaceDetectedNs,
                         latestProcessingStatus
@@ -874,6 +906,7 @@ public final class RppgEngine {
                         fillPercent,
                         latestBpmDecision.bpm(),
                         latestQuality,
+                        latestSkinCoverage,
                         latestBpmDecision.status(),
                         latestProcessingStatus,
                         latestMotionScore,
@@ -892,6 +925,7 @@ public final class RppgEngine {
                         latestProcessingStatus,
                         latestMotionScore,
                         latestQuality,
+                        latestSkinCoverage,
                         measuredFps,
                         fillPercent,
                         warnings
@@ -908,6 +942,7 @@ public final class RppgEngine {
                         autoDecision.autoModeState(),
                         latestMotionScore,
                         latestSmoothedRectDelta,
+                        latestSkinCoverage,
                         latestProcessingStatus,
                         fillPercent,
                         measuredFps,
@@ -952,6 +987,7 @@ public final class RppgEngine {
                     latestProcessingStatus,
                     latestMotionScore,
                     latestQuality,
+                    latestSkinCoverage,
                     0.0,
                     0.0,
                     List.of()
@@ -968,6 +1004,7 @@ public final class RppgEngine {
                     null,
                     0.0,
                     ProcessingStatus.NORMAL,
+                    0.0,
                     0.0,
                     0.0,
                     0.0,
@@ -1012,11 +1049,12 @@ public final class RppgEngine {
             boolean signalReady,
             double quality,
             Double brightness,
+            Double skinCoverage,
             long nowNs,
             long lastFaceDetectedNs,
             ProcessingStatus processingStatus
     ) {
-        List<String> warnings = new ArrayList<>(4);
+        List<String> warnings = new ArrayList<>(5);
 
         double noFaceElapsedSeconds = (nowNs - lastFaceDetectedNs) / 1_000_000_000.0;
         if (noFaceElapsedSeconds >= config.noFaceWarningSeconds()) {
@@ -1027,6 +1065,9 @@ public final class RppgEngine {
         }
         if (brightness != null && brightness < config.lowLightBrightnessThreshold()) {
             warnings.add(WARNING_LOW_LIGHT);
+        }
+        if (config.skinEnabled() && skinCoverage != null && skinCoverage < config.skinMinCoverage()) {
+            warnings.add(WARNING_LOW_SKIN_COVERAGE);
         }
         if (processingStatus == ProcessingStatus.MOTION_FREEZE) {
             warnings.add(WARNING_TOO_MUCH_MOTION);
@@ -1048,6 +1089,7 @@ public final class RppgEngine {
             ProcessingStatus processingStatus,
             double motionScore,
             double quality,
+            double skinCoverage,
             double fps,
             double windowFill,
             List<String> warnings
@@ -1072,6 +1114,7 @@ public final class RppgEngine {
                 config.roiMode(),
                 snapshotRoiWeights(),
                 round3(quality),
+                round3(Math.max(0.0, skinCoverage)),
                 round2(fps),
                 round1(windowFill),
                 warnings == null ? List.of() : List.copyOf(warnings),
@@ -1093,6 +1136,7 @@ public final class RppgEngine {
             AutoModeState autoModeState,
             double motionScore,
             double smoothedRectDelta,
+            double skinCoverage,
             ProcessingStatus processingStatus,
             double windowFill,
             double fps,
@@ -1115,6 +1159,7 @@ public final class RppgEngine {
                 autoModeState,
                 motionScore,
                 smoothedRectDelta,
+                skinCoverage,
                 processingStatus,
                 windowFill,
                 fps,
@@ -1132,6 +1177,7 @@ public final class RppgEngine {
             double windowFill,
             double bpm,
             double quality,
+            double skinCoverage,
             BpmStatus bpmStatus,
             ProcessingStatus processingStatus,
             double motionScore,
@@ -1155,6 +1201,17 @@ public final class RppgEngine {
         }
         state.lowQualityActive = lowQualityActive;
 
+        boolean lowSkinCoverageActive = warnings.contains(WARNING_LOW_SKIN_COVERAGE);
+        if (shouldEmitThrottledWarning(lowSkinCoverageActive, nowNs, state.lowSkinCoverageActive, state.lastLowSkinWarnLogNs)) {
+            log.warn(
+                    "LOW_SKIN_COVERAGE sustained: skinCoverage={} threshold={}",
+                    String.format(Locale.US, "%.3f", skinCoverage),
+                    String.format(Locale.US, "%.3f", config.skinMinCoverage())
+            );
+            state.lastLowSkinWarnLogNs = nowNs;
+        }
+        state.lowSkinCoverageActive = lowSkinCoverageActive;
+
         boolean tooMuchMotionActive = warnings.contains(WARNING_TOO_MUCH_MOTION);
         if (shouldEmitThrottledWarning(tooMuchMotionActive, nowNs, state.tooMuchMotionActive, state.lastMotionWarnLogNs)) {
             log.warn(
@@ -1170,13 +1227,14 @@ public final class RppgEngine {
         if (log.isDebugEnabled()
                 && (state.lastFrameDebugLogNs == Long.MIN_VALUE || nowNs - state.lastFrameDebugLogNs >= DEBUG_FRAME_LOG_INTERVAL_NS)) {
             log.debug(
-                    "Frame update: avgG={}, bpm={}, status={}, processing={}, motionScore={}, quality={}, fps={}, windowFill={}, warnings={}",
+                    "Frame update: avgG={}, bpm={}, status={}, processing={}, motionScore={}, quality={}, skinCoverage={}, fps={}, windowFill={}, warnings={}",
                     String.format(Locale.US, "%.2f", avgG),
                     String.format(Locale.US, "%.1f", bpm),
                     bpmStatus,
                     processingStatus,
                     String.format(Locale.US, "%.3f", motionScore),
                     String.format(Locale.US, "%.3f", quality),
+                    String.format(Locale.US, "%.3f", skinCoverage),
                     String.format(Locale.US, "%.1f", fps),
                     String.format(Locale.US, "%.1f", windowFill),
                     warnings
@@ -1346,33 +1404,74 @@ public final class RppgEngine {
         return rect != null && rect.width() > 0 && rect.height() > 0;
     }
 
-    private static RoiStats extractSingleRoiStats(Mat bgrFrame, Rect roiRect) {
+    private static CombinedRoiSample extractSingleRoiStats(
+            Mat bgrFrame,
+            Rect roiRect,
+            boolean skinEnabled,
+            double skinMinCoverage,
+            boolean skinFallbackToUnmasked
+    ) {
         Mat roi = new Mat(bgrFrame, roiRect);
-        Scalar channelMeans = mean(roi);
-        return new RoiStats(channelMeans.get(2), channelMeans.get(1), channelMeans.get(0));
+        SkinMaskRoiAnalyzer.Result result = SkinMaskRoiAnalyzer.analyze(
+                roi,
+                skinEnabled,
+                skinMinCoverage,
+                skinFallbackToUnmasked
+        );
+        return new CombinedRoiSample(result.roiStats(), result.skinCoverage());
     }
 
-    private static RoiStats extractCombinedRoiStats(
+    private static CombinedRoiSample extractCombinedRoiStats(
             Mat bgrFrame,
             FrameRois rois,
             RoiMode roiMode,
             double foreheadWeight,
             double leftCheekWeight,
-            double rightCheekWeight
+            double rightCheekWeight,
+            boolean skinEnabled,
+            double skinMinCoverage,
+            boolean skinFallbackToUnmasked
     ) {
-        RoiStats forehead = extractSingleRoiStats(bgrFrame, rois.forehead());
+        CombinedRoiSample forehead = extractSingleRoiStats(
+                bgrFrame,
+                rois.forehead(),
+                skinEnabled,
+                skinMinCoverage,
+                skinFallbackToUnmasked
+        );
         if (roiMode == RoiMode.FOREHEAD_ONLY) {
             return forehead;
         }
 
-        RoiStats leftCheek = extractSingleRoiStats(bgrFrame, rois.leftCheek());
-        RoiStats rightCheek = extractSingleRoiStats(bgrFrame, rois.rightCheek());
+        CombinedRoiSample leftCheek = extractSingleRoiStats(
+                bgrFrame,
+                rois.leftCheek(),
+                skinEnabled,
+                skinMinCoverage,
+                skinFallbackToUnmasked
+        );
+        CombinedRoiSample rightCheek = extractSingleRoiStats(
+                bgrFrame,
+                rois.rightCheek(),
+                skinEnabled,
+                skinMinCoverage,
+                skinFallbackToUnmasked
+        );
         double[] normalized = normalizedRoiWeights(foreheadWeight, leftCheekWeight, rightCheekWeight);
 
-        double meanR = forehead.meanR() * normalized[0] + leftCheek.meanR() * normalized[1] + rightCheek.meanR() * normalized[2];
-        double meanG = forehead.meanG() * normalized[0] + leftCheek.meanG() * normalized[1] + rightCheek.meanG() * normalized[2];
-        double meanB = forehead.meanB() * normalized[0] + leftCheek.meanB() * normalized[1] + rightCheek.meanB() * normalized[2];
-        return new RoiStats(meanR, meanG, meanB);
+        double meanR = forehead.roiStats().meanR() * normalized[0]
+                + leftCheek.roiStats().meanR() * normalized[1]
+                + rightCheek.roiStats().meanR() * normalized[2];
+        double meanG = forehead.roiStats().meanG() * normalized[0]
+                + leftCheek.roiStats().meanG() * normalized[1]
+                + rightCheek.roiStats().meanG() * normalized[2];
+        double meanB = forehead.roiStats().meanB() * normalized[0]
+                + leftCheek.roiStats().meanB() * normalized[1]
+                + rightCheek.roiStats().meanB() * normalized[2];
+        double skinCoverage = forehead.skinCoverage() * normalized[0]
+                + leftCheek.skinCoverage() * normalized[1]
+                + rightCheek.skinCoverage() * normalized[2];
+        return new CombinedRoiSample(new RoiStats(meanR, meanG, meanB), skinCoverage);
     }
 
     private static double[] normalizedRoiWeights(
@@ -1534,13 +1633,40 @@ public final class RppgEngine {
     @Getter
     @ToString
     @EqualsAndHashCode
+    private static final class CombinedRoiSample {
+        private final RoiStats roiStats;
+        private final double skinCoverage;
+
+        private CombinedRoiSample(RoiStats roiStats, double skinCoverage) {
+            this.roiStats = roiStats;
+            this.skinCoverage = skinCoverage;
+        }
+
+        private RoiStats roiStats() {
+            return roiStats;
+        }
+
+        private double skinCoverage() {
+            return skinCoverage;
+        }
+    }
+
+    @Getter
+    @ToString
+    @EqualsAndHashCode
     private static final class WarningLogState {
         private boolean noFaceActive;
         private boolean lowQualityActive;
+        private boolean lowSkinCoverageActive;
         private boolean tooMuchMotionActive;
         private long lastNoFaceWarnLogNs = Long.MIN_VALUE;
         private long lastLowQualityWarnLogNs = Long.MIN_VALUE;
+        private long lastLowSkinWarnLogNs = Long.MIN_VALUE;
         private long lastMotionWarnLogNs = Long.MIN_VALUE;
         private long lastFrameDebugLogNs = Long.MIN_VALUE;
     }
 }
+
+
+
+
