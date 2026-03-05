@@ -9,6 +9,10 @@ rppg:
     height: 480
     target-fps: 30.0
     preview-jpeg-fps: 10.0
+  face:
+    smoothing:
+      alpha: 0.2
+      max-step: 0.2
   window:
     seconds: 30
     update-interval-ms: 2000

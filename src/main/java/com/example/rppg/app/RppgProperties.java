@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 @Setter
 public class RppgProperties {
     private Camera camera = new Camera();
+    private Face face = new Face();
     private Window window = new Window();
     private Hr hr = new Hr();
     private Csv csv = new Csv();
@@ -29,6 +30,8 @@ public class RppgProperties {
                 camera.width,
                 camera.height,
                 camera.targetFps,
+                face.smoothing.alpha,
+                face.smoothing.maxStep,
                 camera.previewJpegFps,
                 window.seconds,
                 window.updateIntervalMs,
@@ -80,6 +83,19 @@ public class RppgProperties {
         private int height = 480;
         private double targetFps = 30.0;
         private double previewJpegFps = 10.0;
+    }
+
+    @Getter
+    @Setter
+    public static class Face {
+        private Smoothing smoothing = new Smoothing();
+    }
+
+    @Getter
+    @Setter
+    public static class Smoothing {
+        private double alpha = 0.2;
+        private double maxStep = 0.2;
     }
 
     @Getter

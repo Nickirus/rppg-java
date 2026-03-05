@@ -1,5 +1,6 @@
 package com.example.rppg.app;
 
+import com.example.rppg.vision.FaceRectSmoother;
 import com.example.rppg.vision.FaceTracker;
 import com.example.rppg.vision.RoiMode;
 import com.example.rppg.vision.RoiSelector;
@@ -272,6 +273,10 @@ public final class RppgEngine {
             int capturedFrames = 0;
             Rect lastFace = null;
             long lastFaceDetectedNs = startedNs;
+            FaceRectSmoother faceRectSmoother = new FaceRectSmoother(
+                    config.faceSmoothingAlpha(),
+                    config.faceSmoothingMaxStep()
+            );
             MotionGate motionGate = new MotionGate(
                     config.motionThreshold(),
                     config.motionFreezeMinMs(),
@@ -315,6 +320,7 @@ public final class RppgEngine {
             double latestAvgG = 0.0;
             double latestPeakHz = Double.NaN;
             double latestMotionScore = 0.0;
+            double latestSmoothedRectDelta = 0.0;
             ProcessingStatus latestProcessingStatus = ProcessingStatus.NORMAL;
             long lastCsvLogNs = Long.MIN_VALUE;
             WarningLogState warningLogState = new WarningLogState();
@@ -348,12 +354,21 @@ public final class RppgEngine {
                     }
                 }
 
-                FaceTracker.Rect motionFace = lastFace == null
+                FaceTracker.Rect rawFaceRect = lastFace == null
                         ? null
                         : new FaceTracker.Rect(lastFace.x(), lastFace.y(), lastFace.width(), lastFace.height());
-                MotionGate.State motionState = motionGate.update(motionFace, nowNs);
+                MotionGate.State motionState = motionGate.update(rawFaceRect, nowNs);
                 latestMotionScore = motionState.motionScore();
                 latestProcessingStatus = motionState.frozen() ? ProcessingStatus.MOTION_FREEZE : ProcessingStatus.NORMAL;
+                FaceTracker.Rect smoothedFaceRect = null;
+                if (rawFaceRect == null) {
+                    faceRectSmoother.reset();
+                    latestSmoothedRectDelta = 0.0;
+                } else {
+                    FaceRectSmoother.Result smoothResult = faceRectSmoother.update(rawFaceRect, bgr.cols(), bgr.rows());
+                    smoothedFaceRect = smoothResult.smoothedRect();
+                    latestSmoothedRectDelta = smoothResult.deltaNormalized();
+                }
                 if (motionState.shouldResetWindow()) {
                     if (signalWindow != null && signalWindowCapacity > 0) {
                         signalWindow = new SignalWindow(signalWindowCapacity);
@@ -422,6 +437,7 @@ public final class RppgEngine {
                             autoDecision.activeMethod(),
                             autoDecision.autoModeState(),
                             latestMotionScore,
+                            latestSmoothedRectDelta,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -454,7 +470,15 @@ public final class RppgEngine {
                     continue;
                 }
 
-                FrameRois frameRois = roiRectsForFace(lastFace, bgr.cols(), bgr.rows(), config.roiMode());
+                Rect roiFaceRect = smoothedFaceRect == null
+                        ? lastFace
+                        : new Rect(
+                        smoothedFaceRect.x(),
+                        smoothedFaceRect.y(),
+                        smoothedFaceRect.width(),
+                        smoothedFaceRect.height()
+                );
+                FrameRois frameRois = roiRectsForFace(roiFaceRect, bgr.cols(), bgr.rows(), config.roiMode());
                 if (!frameRois.isUsable(config.roiMode())) {
                     List<String> warnings = buildWarnings(
                             false,
@@ -505,6 +529,7 @@ public final class RppgEngine {
                             autoDecision.activeMethod(),
                             autoDecision.autoModeState(),
                             latestMotionScore,
+                            latestSmoothedRectDelta,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -630,6 +655,7 @@ public final class RppgEngine {
                             autoDecision.activeMethod(),
                             autoDecision.autoModeState(),
                             latestMotionScore,
+                            latestSmoothedRectDelta,
                             latestProcessingStatus,
                             0.0,
                             measuredFps,
@@ -715,6 +741,7 @@ public final class RppgEngine {
                             autoDecision.activeMethod(),
                             autoDecision.autoModeState(),
                             latestMotionScore,
+                            latestSmoothedRectDelta,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -880,6 +907,7 @@ public final class RppgEngine {
                         autoDecision.activeMethod(),
                         autoDecision.autoModeState(),
                         latestMotionScore,
+                        latestSmoothedRectDelta,
                         latestProcessingStatus,
                         fillPercent,
                         measuredFps,
@@ -1064,6 +1092,7 @@ public final class RppgEngine {
             SignalMethod activeSignalMethod,
             AutoModeState autoModeState,
             double motionScore,
+            double smoothedRectDelta,
             ProcessingStatus processingStatus,
             double windowFill,
             double fps,
@@ -1085,6 +1114,7 @@ public final class RppgEngine {
                 activeSignalMethod,
                 autoModeState,
                 motionScore,
+                smoothedRectDelta,
                 processingStatus,
                 windowFill,
                 fps,

@@ -113,6 +113,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `rppg.signal.quality2.*` for SNR/margin/harmonic thresholds and weights used by `QUALITY2`
   - `rppg.signal.temporal-normalization.enabled`, `rppg.signal.temporal-normalization.eps`
   - `rppg.hr.min-hz`, `rppg.hr.max-hz`
+  - `rppg.face.smoothing.alpha`, `rppg.face.smoothing.max-step`
   - `rppg.window.seconds`, `rppg.window.update-interval-ms`
   - `rppg.signal.quality-threshold`, `rppg.signal.max-step-per-update-bpm`
   - `rppg.motion.threshold`, `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
@@ -132,4 +133,5 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - No camera access is required for tests.
 - Signal-processing tests use synthetic sine signals.
 - Warning flags are best-effort engineering heuristics, not medical diagnostics.
+- Face jitter handling: ROI uses smoothed face rectangle (EMA), while motion gating uses raw detected face rectangle for conservative motion detection.
 - JavaCV uses native platform binaries (camera/FFmpeg/OpenCV). `javacv-platform` bundles common natives, but camera behavior is still OS/driver dependent and must be validated on each target platform.
