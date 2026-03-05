@@ -20,6 +20,7 @@ public class RppgProperties {
     private Csv csv = new Csv();
     private Signal signal = new Signal();
     private Skin skin = new Skin();
+    private Illum illum = new Illum();
     private Roi roi = new Roi();
     private Auto auto = new Auto();
     private Warning warning = new Warning();
@@ -54,6 +55,8 @@ public class RppgProperties {
                 skin.enabled,
                 skin.minCoverage,
                 skin.fallbackToUnmasked,
+                illum.enabled,
+                illum.regressionWindowSeconds,
                 signal.maxStepPerUpdateBpm,
                 signal.temporalNormalization.enabled,
                 signal.temporalNormalization.eps,
@@ -140,6 +143,13 @@ public class RppgProperties {
         private boolean enabled = true;
         private double minCoverage = 0.25;
         private boolean fallbackToUnmasked = true;
+    }
+
+    @Getter
+    @Setter
+    public static class Illum {
+        private boolean enabled = true;
+        private double regressionWindowSeconds = 30.0;
     }
 
     @Getter

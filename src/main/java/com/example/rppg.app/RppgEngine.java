@@ -12,6 +12,7 @@ import com.example.signal.BpmStatus;
 import com.example.signal.ChromExtractor;
 import com.example.signal.GreenExtractor;
 import com.example.signal.HeartRateEstimator;
+import com.example.signal.IlluminationCompensator;
 import com.example.signal.PosExtractor;
 import com.example.signal.RoiStats;
 import com.example.signal.RppgSignalExtractor;
@@ -325,6 +326,8 @@ public final class RppgEngine {
             BpmStabilizer.Decision latestBpmDecision = BpmStabilizer.Decision.invalid();
             double latestQuality = 0.0;
             double latestAvgG = 0.0;
+            double latestBgLuma = 0.0;
+            double latestIllumRegressionCoeff = 0.0;
             double latestPeakHz = Double.NaN;
             double latestSkinCoverage = 1.0;
             double latestMotionScore = 0.0;
@@ -332,6 +335,11 @@ public final class RppgEngine {
             ProcessingStatus latestProcessingStatus = ProcessingStatus.NORMAL;
             long lastCsvLogNs = Long.MIN_VALUE;
             WarningLogState warningLogState = new WarningLogState();
+            int illumWindowSamples = Math.max(
+                    3,
+                    (int) Math.round(config.illumRegressionWindowSeconds() * Math.max(5.0, config.targetFps()))
+            );
+            IlluminationCompensator illuminationCompensator = new IlluminationCompensator(illumWindowSamples);
 
             log.info("Engine loop started. sessionCsv={}", config.csvPath());
 
@@ -382,6 +390,7 @@ public final class RppgEngine {
                         signalWindow = new SignalWindow(signalWindowCapacity);
                     }
                     warmupSamples.clear();
+                    illuminationCompensator.reset();
                     latestQuality = 0.0;
                     latestBpmDecision = stabilizer.holdCurrent();
                     lastBpmUpdateNs = Long.MIN_VALUE;
@@ -397,6 +406,9 @@ public final class RppgEngine {
                 double fillPercent = computeFillPercent(signalWindow, signalWindowCapacity);
                 if (lastFace == null) {
                     latestSkinCoverage = 0.0;
+                    latestBgLuma = 0.0;
+                    latestIllumRegressionCoeff = 0.0;
+                    illuminationCompensator.reset();
                     List<String> warnings = buildWarnings(
                             false,
                             latestQuality,
@@ -451,6 +463,8 @@ public final class RppgEngine {
                             latestMotionScore,
                             latestSmoothedRectDelta,
                             latestSkinCoverage,
+                            latestBgLuma,
+                            latestIllumRegressionCoeff,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -494,6 +508,9 @@ public final class RppgEngine {
                 FrameRois frameRois = roiRectsForFace(roiFaceRect, bgr.cols(), bgr.rows(), config.roiMode());
                 if (!frameRois.isUsable(config.roiMode())) {
                     latestSkinCoverage = 0.0;
+                    latestBgLuma = 0.0;
+                    latestIllumRegressionCoeff = 0.0;
+                    illuminationCompensator.reset();
                     List<String> warnings = buildWarnings(
                             false,
                             latestQuality,
@@ -548,6 +565,8 @@ public final class RppgEngine {
                             latestMotionScore,
                             latestSmoothedRectDelta,
                             latestSkinCoverage,
+                            latestBgLuma,
+                            latestIllumRegressionCoeff,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -595,9 +614,18 @@ public final class RppgEngine {
                 latestSkinCoverage = roiSample.skinCoverage();
                 double avgG = roiStats.meanG();
                 double brightness = roiStats.meanBrightness();
+                Rect bgRect = selectBackgroundRoi(roiFaceRect, bgr.cols(), bgr.rows());
+                latestBgLuma = extractRoiLuma(bgr, bgRect);
                 double extractedSample = sanitizeSignalSample(
                         extractorForMethod(extractors, autoDecision.effectiveMethod()).extract(roiStats)
                 );
+                if (config.illumEnabled() && Double.isFinite(latestBgLuma)) {
+                    IlluminationCompensator.Result illum = illuminationCompensator.update(extractedSample, latestBgLuma);
+                    extractedSample = sanitizeSignalSample(illum.compensatedSample());
+                    latestIllumRegressionCoeff = illum.regressionCoefficient();
+                } else {
+                    latestIllumRegressionCoeff = 0.0;
+                }
                 latestAvgG = avgG;
 
                 if (signalWindow == null && capturedFrames >= MIN_FRAMES_FOR_FPS_ESTIMATE) {
@@ -683,6 +711,8 @@ public final class RppgEngine {
                             latestMotionScore,
                             latestSmoothedRectDelta,
                             latestSkinCoverage,
+                            latestBgLuma,
+                            latestIllumRegressionCoeff,
                             latestProcessingStatus,
                             0.0,
                             measuredFps,
@@ -773,6 +803,8 @@ public final class RppgEngine {
                             latestMotionScore,
                             latestSmoothedRectDelta,
                             latestSkinCoverage,
+                            latestBgLuma,
+                            latestIllumRegressionCoeff,
                             latestProcessingStatus,
                             fillPercent,
                             measuredFps,
@@ -877,6 +909,7 @@ public final class RppgEngine {
                             resetExtractors(extractors);
                             signalWindow = new SignalWindow(signalWindowCapacity);
                             warmupSamples.clear();
+                            illuminationCompensator.reset();
                             stabilizer.reset();
                             latestBpmDecision = BpmStabilizer.Decision.invalid();
                             latestQuality = 0.0;
@@ -943,6 +976,8 @@ public final class RppgEngine {
                         latestMotionScore,
                         latestSmoothedRectDelta,
                         latestSkinCoverage,
+                        latestBgLuma,
+                        latestIllumRegressionCoeff,
                         latestProcessingStatus,
                         fillPercent,
                         measuredFps,
@@ -1137,6 +1172,8 @@ public final class RppgEngine {
             double motionScore,
             double smoothedRectDelta,
             double skinCoverage,
+            double bgLuma,
+            double regressionCoeff,
             ProcessingStatus processingStatus,
             double windowFill,
             double fps,
@@ -1160,6 +1197,8 @@ public final class RppgEngine {
                 motionScore,
                 smoothedRectDelta,
                 skinCoverage,
+                bgLuma,
+                regressionCoeff,
                 processingStatus,
                 windowFill,
                 fps,
@@ -1402,6 +1441,66 @@ public final class RppgEngine {
 
     private static boolean isValidRect(Rect rect) {
         return rect != null && rect.width() > 0 && rect.height() > 0;
+    }
+
+    private static Rect selectBackgroundRoi(Rect faceRect, int frameWidth, int frameHeight) {
+        if (!isValidRect(faceRect)) {
+            return null;
+        }
+
+        int gap = Math.max(4, faceRect.width() / 16);
+        int bgW = Math.max(20, faceRect.width() / 3);
+        int bgH = Math.max(20, faceRect.height() / 3);
+        int y = faceRect.y() + (faceRect.height() - bgH) / 2;
+
+        Rect right = clampRect(new Rect(faceRect.x() + faceRect.width() + gap, y, bgW, bgH), frameWidth, frameHeight);
+        if (isValidRect(right) && !intersects(right, faceRect)) {
+            return right;
+        }
+
+        Rect left = clampRect(new Rect(faceRect.x() - gap - bgW, y, bgW, bgH), frameWidth, frameHeight);
+        if (isValidRect(left) && !intersects(left, faceRect)) {
+            return left;
+        }
+
+        Rect above = clampRect(new Rect(faceRect.x(), faceRect.y() - gap - bgH, bgW, bgH), frameWidth, frameHeight);
+        if (isValidRect(above) && !intersects(above, faceRect)) {
+            return above;
+        }
+
+        Rect below = clampRect(new Rect(faceRect.x(), faceRect.y() + faceRect.height() + gap, bgW, bgH), frameWidth, frameHeight);
+        if (isValidRect(below) && !intersects(below, faceRect)) {
+            return below;
+        }
+
+        return null;
+    }
+
+    private static double extractRoiLuma(Mat bgrFrame, Rect roiRect) {
+        if (!isValidRect(roiRect)) {
+            return Double.NaN;
+        }
+        Mat roi = new Mat(bgrFrame, roiRect);
+        Scalar means = mean(roi);
+        return (means.get(2) + means.get(1) + means.get(0)) / 3.0;
+    }
+
+    private static Rect clampRect(Rect rect, int frameWidth, int frameHeight) {
+        int x = Math.max(0, rect.x());
+        int y = Math.max(0, rect.y());
+        int maxW = Math.max(0, frameWidth - x);
+        int maxH = Math.max(0, frameHeight - y);
+        int w = Math.max(0, Math.min(rect.width(), maxW));
+        int h = Math.max(0, Math.min(rect.height(), maxH));
+        return new Rect(x, y, w, h);
+    }
+
+    private static boolean intersects(Rect a, Rect b) {
+        int x1 = Math.max(a.x(), b.x());
+        int y1 = Math.max(a.y(), b.y());
+        int x2 = Math.min(a.x() + a.width(), b.x() + b.width());
+        int y2 = Math.min(a.y() + a.height(), b.y() + b.height());
+        return x2 > x1 && y2 > y1;
     }
 
     private static CombinedRoiSample extractSingleRoiStats(
@@ -1666,6 +1765,10 @@ public final class RppgEngine {
         private long lastFrameDebugLogNs = Long.MIN_VALUE;
     }
 }
+
+
+
+
 
 
 

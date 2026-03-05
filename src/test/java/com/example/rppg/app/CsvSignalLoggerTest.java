@@ -35,6 +35,8 @@ class CsvSignalLoggerTest {
                     0.03,
                     0.01,
                     0.72,
+                    118.0,
+                    0.45,
                     ProcessingStatus.NORMAL,
                     100.0,
                     29.8,
@@ -54,6 +56,8 @@ class CsvSignalLoggerTest {
         assertTrue(header.contains("motionScore"));
         assertTrue(header.contains("smoothedRectDelta"));
         assertTrue(header.contains("skinCoverage"));
+        assertTrue(header.contains("bgLuma"));
+        assertTrue(header.contains("regressionCoeff"));
         assertTrue(header.contains("processingStatus"));
         assertTrue(header.contains("windowFill"));
         assertTrue(header.contains("fps"));

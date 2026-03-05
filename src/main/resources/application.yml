@@ -45,6 +45,9 @@ rppg:
     enabled: true
     min-coverage: 0.25
     fallback-to-unmasked: true
+  illum:
+    enabled: true
+    regression-window-seconds: 30
   roi:
     mode: MULTI
     forehead-weight: 0.30

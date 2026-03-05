@@ -63,6 +63,9 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `windowFill=...%`
 - Builds a fixed-length `SignalWindow` from measured FPS:
   - `windowSamples = round(windowSeconds * measuredFps)` (default `windowSeconds=30`)
+- Optional illumination compensation (`rppg.illum.enabled`):
+  - uses a background ROI near the face (non-overlapping) to estimate common brightness changes
+  - applies rolling linear regression and subtracts the common-mode component from scalar rPPG sample
 - When the window is full, calls `HeartRateEstimator` and prints `BPM update` about every 2 seconds.
 - If the signal is flat/invalid, prints `BPM update: invalid: ...` without crashing.
 - Computes a simple quality score (`0..1`) from spectral peak dominance.
@@ -105,6 +108,8 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - JPEG rendering/encoding is performed inside `RppgEngine` and throttled to about `10 fps` by default (`Config.previewJpegFps`).
 - If engine is not started, video endpoint returns `409` and UI shows a clear message.
 - The dashboard highlights active warnings in a dedicated panel.
+- Session CSV includes analysis fields for motion/skin/illumination:
+  - `motionScore`, `smoothedRectDelta`, `skinCoverage`, `bgLuma`, `regressionCoeff`
 
 ## Configuration (`application.yml`)
 - Runtime defaults are in `src/main/resources/application.yml` under `rppg.*`.
@@ -118,6 +123,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `rppg.window.seconds`, `rppg.window.update-interval-ms`
   - `rppg.signal.quality-threshold`, `rppg.signal.max-step-per-update-bpm`
   - `rppg.skin.enabled`, `rppg.skin.min-coverage`, `rppg.skin.fallback-to-unmasked`
+  - `rppg.illum.enabled`, `rppg.illum.regression-window-seconds`
   - `rppg.motion.threshold`, `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
   - `rppg.roi.mode`, `rppg.roi.forehead-weight`, `rppg.roi.left-cheek-weight`, `rppg.roi.right-cheek-weight`
   - `rppg.auto.*` for fallback/probe thresholds and cooldowns (`rppg.auto.use-quality2-for-gating` enables `quality2` in AUTO decisions)
