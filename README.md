@@ -168,9 +168,11 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `janus/publisher/index.html`
   - `janus/publisher/nginx.conf`
 - Services:
+  - `postgres` (local DB for app persistence + Flyway migrations)
   - `janus` (Janus Gateway + VideoRoom plugin)
   - `janus-publisher` (minimal publisher page + reverse proxy to Janus API)
 - Default ports:
+  - Postgres: `localhost:5432`
   - Publisher page: `http://localhost:8081`
   - Janus API: `http://localhost:8088/janus`
   - Janus WebSockets: `ws://localhost:8188`
@@ -194,6 +196,29 @@ Run locally:
 Notes:
 - This setup is local-machine oriented (`nat_1_1_mapping = 127.0.0.1` in Janus config).
 - If media does not flow, check local firewall rules for UDP `10000-10100`.
+
+### Postgres + Flyway migrations
+- Added Spring persistence stack:
+  - Spring Data JPA
+  - Flyway migrations in `src/main/resources/db/migration`
+  - PostgreSQL driver
+- Tables:
+  - `sessions`
+  - `session_events`
+- DB config env vars used by app:
+  - `RPPG_DB_URL` (default `jdbc:postgresql://localhost:5432/rppg`)
+  - `RPPG_DB_USER` (default `rppg`)
+  - `RPPG_DB_PASSWORD` (default `rppg`)
+  - `RPPG_FLYWAY_ENABLED` (default `true`)
+
+Apply migrations locally:
+1. Start Postgres:
+   - `docker compose up -d postgres`
+2. Start app (web mode):
+   - `./gradlew bootRun --args="--web"`
+3. Verify DB connectivity endpoint:
+   - `GET http://localhost:8080/api/health/db`
+   - expected JSON: `{"status":"UP",...}`
 
 ### Janus RTP Forward Smoke Test
 - Helper script:

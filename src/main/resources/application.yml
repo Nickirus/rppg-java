@@ -1,6 +1,22 @@
 ﻿spring:
   application:
     name: rppg-java
+  datasource:
+    url: ${RPPG_DB_URL:jdbc:postgresql://localhost:5432/rppg}
+    username: ${RPPG_DB_USER:rppg}
+    password: ${RPPG_DB_PASSWORD:rppg}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: ${RPPG_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
 
 rppg:
   camera:
@@ -69,3 +85,4 @@ rppg:
     threshold: 0.10
     freeze-min-ms: 300
     reset-after-ms: 3000
+

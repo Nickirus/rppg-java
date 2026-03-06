@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rppg}
+      POSTGRES_USER: ${POSTGRES_USER:-rppg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rppg}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rppg} -d ${POSTGRES_DB:-rppg}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   janus:
     image: canyan/janus-gateway:latest
     command: ["/usr/local/bin/janus", "-F", "/usr/local/etc/janus"]
@@ -22,3 +39,6 @@ services:
     volumes:
       - ./janus/publisher/index.html:/usr/share/nginx/html/index.html:ro
       - ./janus/publisher/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  postgres-data:

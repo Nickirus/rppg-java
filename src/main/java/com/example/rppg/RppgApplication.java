@@ -9,6 +9,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.util.HashMap;
@@ -185,6 +188,12 @@ public class RppgApplication {
         app.setWebApplicationType(WebApplicationType.NONE);
         Map<String, Object> properties = new HashMap<>();
         properties.put("spring.main.banner-mode", "off");
+        properties.put(
+                "spring.autoconfigure.exclude",
+                DataSourceAutoConfiguration.class.getName() + ","
+                        + HibernateJpaAutoConfiguration.class.getName() + ","
+                        + FlywayAutoConfiguration.class.getName()
+        );
         app.setDefaultProperties(properties);
         try (ConfigurableApplicationContext context = app.run(args)) {
             return context.getBean(RppgProperties.class).toConfig();
