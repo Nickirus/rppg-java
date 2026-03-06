@@ -172,6 +172,39 @@ Notes:
 - This setup is local-machine oriented (`nat_1_1_mapping = 127.0.0.1` in Janus config).
 - If media does not flow, check local firewall rules for UDP `10000-10100`.
 
+### Janus RTP Forward Smoke Test
+- Helper script:
+  - `scripts/janus_rtp_forward_smoke.py`
+- What it does:
+  - creates Janus session
+  - attaches `janus.plugin.videoroom`
+  - finds current publisher in room
+  - starts `rtp_forward` to target host/UDP ports
+  - counts incoming UDP packets on the configured local ports
+  - stops forwarder and destroys Janus session
+
+Required before running:
+1. `docker compose up -d`
+2. Open `http://localhost:8081` and click `Start publish` (publisher must be active).
+
+One-command smoke test (PowerShell):
+- `python scripts/janus_rtp_forward_smoke.py --janus-url http://localhost:8088/janus --room 1234 --host host.docker.internal --audio-port 5002 --video-port 5004 --duration 15`
+
+Expected success output:
+- non-zero packet counts on at least one of the RTP ports
+- final line: `Smoke test OK: RTP packets observed.`
+
+Common parameters:
+- `--janus-url` Janus REST endpoint (default `http://localhost:8088/janus`)
+- `--room` VideoRoom id (default `1234`)
+- `--publisher-id` explicit publisher feed id (optional; otherwise first participant is used)
+- `--host` forward target host reachable from Janus container
+  - Docker Desktop: `host.docker.internal`
+  - Linux engine: often bridge host like `172.17.0.1`
+- `--audio-port`, `--video-port` local UDP ports to receive RTP
+- `--duration` packet counting window in seconds
+- `--admin-key` optional VideoRoom `admin_key` if your room requires it
+
 ## Notes
 - No camera access is required for tests.
 - Signal-processing tests use synthetic sine signals.
