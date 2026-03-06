@@ -41,6 +41,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `--web`
   - `--run`
   - `--camera-check`
+  - `--rtp-ingest`
 
 ## Camera smoke-test (manual)
 - Preferred: `./gradlew bootRun --args="--camera-check"`
@@ -82,6 +83,28 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - `TOO_MUCH_MOTION`: motion freeze is active based on `rppg.motion.threshold`,
     `rppg.motion.freeze-min-ms`, `rppg.motion.reset-after-ms`
 - `--run` mode is headless (no web UI server).
+
+## RTP ingest mode (manual, Janus forward decode)
+- Purpose: receive forwarded RTP video locally and decode frames via JavaCV/FFmpeg.
+- Preferred:
+  - `./gradlew bootRun --args="--rtp-ingest --rtp-video-port=5004 --rtp-codec=auto --rtp-width=640 --rtp-height=480 --rtp-fps=30"`
+- Also works:
+  - `./gradlew run --args="--rtp-ingest --rtp-video-port=5004"`
+- Optional args:
+  - `--rtp-port=<port>` alias of `--rtp-video-port`
+  - `--rtp-audio-port=<port>` optional audio m-line in generated SDP
+  - `--rtp-codec=auto|h264|vp8` (`auto` tries H264 first, then VP8 fallback)
+  - `--rtp-width=<pixels>` default `640`
+  - `--rtp-height=<pixels>` default `480`
+  - `--rtp-fps=<value>` default `30`
+  - `--rtp-auto-probe-seconds=<sec>` default `6`
+  - `--rtp-duration-seconds=<sec>` default `0` (run until stopped)
+- Runtime logs:
+  - frame count and measured decode FPS every ~2 seconds.
+- Typical flow:
+  1. Start Janus publisher and `rtp_forward`.
+  2. Start this mode on matching local RTP video port.
+  3. Confirm logs show increasing `frames=` and stable `fps=`.
 
 ## Web UI mode (manual)
 - Preferred: `./gradlew bootRun --args="--web"`
