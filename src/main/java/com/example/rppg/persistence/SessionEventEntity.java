@@ -37,6 +37,6 @@ public class SessionEventEntity {
     @Column(name = "quality")
     private Double quality;
 
-    @Column(name = "payload_json", columnDefinition = "jsonb")
+    @Column(name = "payload_json")
     private String payloadJson;
 }

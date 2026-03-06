@@ -19,6 +19,15 @@
     locations: classpath:db/migration
 
 rppg:
+  grpc:
+    enabled: ${RPPG_GRPC_ENABLED:true}
+    port: ${RPPG_GRPC_PORT:9090}
+  ingest:
+    batch-size: 200
+    allowed-session-statuses:
+      - CREATED
+      - RUNNING
+      - ACTIVE
   camera:
     index: 0
     width: 640

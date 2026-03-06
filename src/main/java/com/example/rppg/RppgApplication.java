@@ -194,6 +194,7 @@ public class RppgApplication {
                         + HibernateJpaAutoConfiguration.class.getName() + ","
                         + FlywayAutoConfiguration.class.getName()
         );
+        properties.put("rppg.grpc.enabled", "false");
         app.setDefaultProperties(properties);
         try (ConfigurableApplicationContext context = app.run(args)) {
             return context.getBean(RppgProperties.class).toConfig();

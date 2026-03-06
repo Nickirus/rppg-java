@@ -220,6 +220,20 @@ Apply migrations locally:
    - `GET http://localhost:8080/api/health/db`
    - expected JSON: `{"status":"UP",...}`
 
+## gRPC ingest API (timeline events)
+- Contract:
+  - proto: `src/main/proto/timeline_ingest.proto`
+  - service: `TimelineIngestService/IngestTimeline(stream TimelineEvent) -> IngestAck`
+- Server:
+  - starts with Spring context when `rppg.grpc.enabled=true` (default)
+  - port: `rppg.grpc.port` (default `9090`)
+- Ingest rules:
+  - validates `session_id` exists in `sessions`
+  - validates session `status` is in `rppg.ingest.allowed-session-statuses`
+  - persists to `session_events` in batches (`rppg.ingest.batch-size`)
+- Default ingest statuses:
+  - `CREATED`, `RUNNING`, `ACTIVE`
+
 ### Janus RTP Forward Smoke Test
 - Helper script:
   - `scripts/janus_rtp_forward_smoke.py`

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package rppg.ingest.v1;
+
+option java_package = "com.example.rppg.ingest.v1";
+option java_multiple_files = true;
+option java_outer_classname = "TimelineIngestProto";
+
+message TimelineEvent {
+  int64 session_id = 1;
+  int64 event_time_epoch_ms = 2;
+  string event_type = 3;
+  double bpm = 4;
+  double quality = 5;
+  string payload_json = 6;
+}
+
+message IngestAck {
+  int64 received_events = 1;
+  int64 persisted_events = 2;
+}
+
+service TimelineIngestService {
+  rpc IngestTimeline(stream TimelineEvent) returns (IngestAck);
+}
