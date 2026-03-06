@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -20,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 @RequiredArgsConstructor
 public class WebUiController {
     private final WebUiStateService stateService;
+    private final SessionOrchestrationService sessionService;
 
     @GetMapping(value = "/", produces = MediaType.TEXT_HTML_VALUE)
     public String index() {
@@ -53,6 +56,9 @@ public class WebUiController {
                     .chart-wrap { background: #fff; border: 1px solid #d6deeb; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
                     #bpmChart { width: 100%; height: 180px; display: block; border: 1px solid #d7dfed; border-radius: 8px; background: #f8fafc; }
                     #avgGChart { width: 100%; height: 180px; display: block; border: 1px solid #d7dfed; border-radius: 8px; background: #f8fafc; }
+                    #sessionBpmChart { width: 100%; height: 120px; display: block; border: 1px solid #d7dfed; border-radius: 8px; background: #f8fafc; }
+                    #sessionQualityChart { width: 100%; height: 120px; display: block; border: 1px solid #d7dfed; border-radius: 8px; background: #f8fafc; }
+                    .session-controls { background: #fff; border: 1px solid #d6deeb; border-radius: 10px; padding: 12px; margin: 10px 0 14px; }
                     .chart-note { margin-top: 6px; color: #5f6e84; font-size: 12px; }
                     pre { background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; min-height: 74px; overflow: auto; }
                   </style>
@@ -87,6 +93,26 @@ public class WebUiController {
                     <button onclick="control('stop')">Stop</button>
                     <button onclick="control('reset')">Reset</button>
                   </div>
+                  <div class="session-controls">
+                    <div class="label">Session Orchestration (Postgres-backed)</div>
+                    <div class="grid">
+                      <div class="card"><div class="label">Active Session ID</div><div id="activeSessionId" class="value">--</div></div>
+                      <div class="card"><div class="label">Session Status</div><div id="activeSessionStatus" class="value">--</div></div>
+                    </div>
+                    <div class="buttons">
+                      <button onclick="createSession()">Create Session</button>
+                      <button onclick="startSession()">Start Session</button>
+                      <button onclick="stopSession()">Stop Session</button>
+                    </div>
+                    <div class="chart-wrap">
+                      <div class="label">Session Timeline BPM</div>
+                      <canvas id="sessionBpmChart" width="900" height="140"></canvas>
+                    </div>
+                    <div class="chart-wrap">
+                      <div class="label">Session Timeline Quality</div>
+                      <canvas id="sessionQualityChart" width="900" height="140"></canvas>
+                    </div>
+                  </div>
                   <div class="chart-wrap">
                     <div class="label">BPM History</div>
                     <canvas id="bpmChart" width="900" height="220"></canvas>
@@ -116,6 +142,19 @@ public class WebUiController {
                     const bpmCtx = bpmCanvas.getContext('2d');
                     const avgGCanvas = document.getElementById('avgGChart');
                     const avgGCtx = avgGCanvas.getContext('2d');
+                    const SESSION_TIMELINE_SIZE = 240;
+                    const sessionBpmCanvas = document.getElementById('sessionBpmChart');
+                    const sessionBpmCtx = sessionBpmCanvas.getContext('2d');
+                    const sessionQualityCanvas = document.getElementById('sessionQualityChart');
+                    const sessionQualityCtx = sessionQualityCanvas.getContext('2d');
+                    const sessionBpmHistory = new Array(SESSION_TIMELINE_SIZE).fill(null);
+                    const sessionQualityHistory = new Array(SESSION_TIMELINE_SIZE).fill(null);
+                    let sessionWriteIndex = 0;
+                    let sessionCount = 0;
+                    let sessionBpmDirty = true;
+                    let sessionQualityDirty = true;
+                    let activeSessionId = null;
+                    let sessionTimelineSource = null;
 
                     function clearCharts() {
                       bpmHistory.fill(null);
@@ -126,6 +165,15 @@ public class WebUiController {
                       avgGCount = 0;
                       bpmChartDirty = true;
                       avgGChartDirty = true;
+                    }
+
+                    function clearSessionTimeline() {
+                      sessionBpmHistory.fill(null);
+                      sessionQualityHistory.fill(null);
+                      sessionWriteIndex = 0;
+                      sessionCount = 0;
+                      sessionBpmDirty = true;
+                      sessionQualityDirty = true;
                     }
 
                     function pushBpmPoint(data, warnings) {
@@ -158,6 +206,31 @@ public class WebUiController {
                       return avgGHistory[idx];
                     }
 
+                    function sessionBpmAt(indexFromOldest) {
+                      const start = (sessionWriteIndex - sessionCount + SESSION_TIMELINE_SIZE) % SESSION_TIMELINE_SIZE;
+                      const idx = (start + indexFromOldest) % SESSION_TIMELINE_SIZE;
+                      return sessionBpmHistory[idx];
+                    }
+
+                    function sessionQualityAt(indexFromOldest) {
+                      const start = (sessionWriteIndex - sessionCount + SESSION_TIMELINE_SIZE) % SESSION_TIMELINE_SIZE;
+                      const idx = (start + indexFromOldest) % SESSION_TIMELINE_SIZE;
+                      return sessionQualityHistory[idx];
+                    }
+
+                    function pushSessionTimelinePoint(event) {
+                      const bpm = event && typeof event.bpm === 'number' && Number.isFinite(event.bpm) && event.bpm > 0
+                        ? event.bpm : null;
+                      const quality = event && typeof event.quality === 'number' && Number.isFinite(event.quality)
+                        ? event.quality : null;
+                      sessionBpmHistory[sessionWriteIndex] = bpm;
+                      sessionQualityHistory[sessionWriteIndex] = quality;
+                      sessionWriteIndex = (sessionWriteIndex + 1) % SESSION_TIMELINE_SIZE;
+                      sessionCount = Math.min(sessionCount + 1, SESSION_TIMELINE_SIZE);
+                      sessionBpmDirty = true;
+                      sessionQualityDirty = true;
+                    }
+
                     function resizeCanvas(canvas, ctx) {
                       const dpr = window.devicePixelRatio || 1;
                       const rect = canvas.getBoundingClientRect();
@@ -171,8 +244,12 @@ public class WebUiController {
                     function resizeCharts() {
                       resizeCanvas(bpmCanvas, bpmCtx);
                       resizeCanvas(avgGCanvas, avgGCtx);
+                      resizeCanvas(sessionBpmCanvas, sessionBpmCtx);
+                      resizeCanvas(sessionQualityCanvas, sessionQualityCtx);
                       bpmChartDirty = true;
                       avgGChartDirty = true;
+                      sessionBpmDirty = true;
+                      sessionQualityDirty = true;
                     }
 
                     function drawBpmChart() {
@@ -346,9 +423,123 @@ public class WebUiController {
                       avgGCtx.fill();
                     }
 
+                    function drawSessionBpmChart() {
+                      if (!sessionBpmDirty) {
+                        return;
+                      }
+                      sessionBpmDirty = false;
+                      const w = Math.max(1, sessionBpmCanvas.clientWidth);
+                      const h = 120;
+                      const left = 36;
+                      const right = 10;
+                      const top = 10;
+                      const bottom = 18;
+                      const plotW = Math.max(1, w - left - right);
+                      const plotH = Math.max(1, h - top - bottom);
+                      const minBpm = 40;
+                      const maxBpm = 180;
+
+                      sessionBpmCtx.clearRect(0, 0, w, h);
+                      sessionBpmCtx.fillStyle = '#f8fafc';
+                      sessionBpmCtx.fillRect(0, 0, w, h);
+                      sessionBpmCtx.strokeStyle = '#d0d9ea';
+                      sessionBpmCtx.lineWidth = 1;
+                      sessionBpmCtx.beginPath();
+                      sessionBpmCtx.moveTo(left, top + plotH / 2);
+                      sessionBpmCtx.lineTo(left + plotW, top + plotH / 2);
+                      sessionBpmCtx.stroke();
+
+                      sessionBpmCtx.strokeStyle = '#0f766e';
+                      sessionBpmCtx.lineWidth = 2;
+                      sessionBpmCtx.beginPath();
+                      let started = false;
+                      let validCount = 0;
+                      for (let i = 0; i < sessionCount; i++) {
+                        const v = sessionBpmAt(i);
+                        if (v == null) {
+                          started = false;
+                          continue;
+                        }
+                        validCount++;
+                        const x = left + (sessionCount <= 1 ? 0 : (i / (sessionCount - 1)) * plotW);
+                        const clamped = Math.max(minBpm, Math.min(maxBpm, v));
+                        const y = top + (1 - ((clamped - minBpm) / (maxBpm - minBpm))) * plotH;
+                        if (!started) {
+                          sessionBpmCtx.moveTo(x, y);
+                          started = true;
+                        } else {
+                          sessionBpmCtx.lineTo(x, y);
+                        }
+                      }
+                      sessionBpmCtx.stroke();
+                      if (validCount === 0) {
+                        sessionBpmCtx.fillStyle = '#64748b';
+                        sessionBpmCtx.font = '11px Segoe UI';
+                        sessionBpmCtx.fillText('No timeline BPM events yet', left + 8, top + 16);
+                      }
+                    }
+
+                    function drawSessionQualityChart() {
+                      if (!sessionQualityDirty) {
+                        return;
+                      }
+                      sessionQualityDirty = false;
+                      const w = Math.max(1, sessionQualityCanvas.clientWidth);
+                      const h = 120;
+                      const left = 36;
+                      const right = 10;
+                      const top = 10;
+                      const bottom = 18;
+                      const plotW = Math.max(1, w - left - right);
+                      const plotH = Math.max(1, h - top - bottom);
+                      const minQ = 0.0;
+                      const maxQ = 1.0;
+
+                      sessionQualityCtx.clearRect(0, 0, w, h);
+                      sessionQualityCtx.fillStyle = '#f8fafc';
+                      sessionQualityCtx.fillRect(0, 0, w, h);
+                      sessionQualityCtx.strokeStyle = '#d0d9ea';
+                      sessionQualityCtx.lineWidth = 1;
+                      sessionQualityCtx.beginPath();
+                      sessionQualityCtx.moveTo(left, top + plotH / 2);
+                      sessionQualityCtx.lineTo(left + plotW, top + plotH / 2);
+                      sessionQualityCtx.stroke();
+
+                      sessionQualityCtx.strokeStyle = '#7c3aed';
+                      sessionQualityCtx.lineWidth = 2;
+                      sessionQualityCtx.beginPath();
+                      let started = false;
+                      let validCount = 0;
+                      for (let i = 0; i < sessionCount; i++) {
+                        const v = sessionQualityAt(i);
+                        if (v == null) {
+                          started = false;
+                          continue;
+                        }
+                        validCount++;
+                        const x = left + (sessionCount <= 1 ? 0 : (i / (sessionCount - 1)) * plotW);
+                        const clamped = Math.max(minQ, Math.min(maxQ, v));
+                        const y = top + (1 - ((clamped - minQ) / (maxQ - minQ))) * plotH;
+                        if (!started) {
+                          sessionQualityCtx.moveTo(x, y);
+                          started = true;
+                        } else {
+                          sessionQualityCtx.lineTo(x, y);
+                        }
+                      }
+                      sessionQualityCtx.stroke();
+                      if (validCount === 0) {
+                        sessionQualityCtx.fillStyle = '#64748b';
+                        sessionQualityCtx.font = '11px Segoe UI';
+                        sessionQualityCtx.fillText('No timeline quality events yet', left + 8, top + 16);
+                      }
+                    }
+
                     function chartLoop() {
                       drawBpmChart();
                       drawAvgGChart();
+                      drawSessionBpmChart();
+                      drawSessionQualityChart();
                       window.requestAnimationFrame(chartLoop);
                     }
 
@@ -433,6 +624,67 @@ public class WebUiController {
                         videoStatusEl.textContent = 'Video stream stopped.';
                       }
                     }
+
+                    function setActiveSession(session) {
+                      activeSessionId = session && typeof session.sessionId === 'number' ? session.sessionId : null;
+                      document.getElementById('activeSessionId').textContent = activeSessionId == null ? '--' : String(activeSessionId);
+                      document.getElementById('activeSessionStatus').textContent = session && session.status ? session.status : '--';
+                    }
+
+                    function reconnectSessionTimeline() {
+                      if (sessionTimelineSource) {
+                        sessionTimelineSource.close();
+                        sessionTimelineSource = null;
+                      }
+                      clearSessionTimeline();
+                      if (activeSessionId == null) {
+                        return;
+                      }
+                      sessionTimelineSource = new EventSource('/api/sessions/' + activeSessionId + '/events/sse');
+                      sessionTimelineSource.addEventListener('session', (evt) => {
+                        const data = JSON.parse(evt.data);
+                        setActiveSession(data);
+                        statusEl.textContent = 'Session update: ' + JSON.stringify(data);
+                      });
+                      sessionTimelineSource.addEventListener('timeline', (evt) => {
+                        const event = JSON.parse(evt.data);
+                        pushSessionTimelinePoint(event);
+                      });
+                      sessionTimelineSource.onerror = () => {
+                        statusEl.textContent = 'Session timeline SSE disconnected for session ' + activeSessionId;
+                      };
+                    }
+
+                    async function createSession() {
+                      const response = await fetch('/api/sessions/create', { method: 'POST' });
+                      const data = await response.json();
+                      setActiveSession(data);
+                      reconnectSessionTimeline();
+                      statusEl.textContent = 'Created session: ' + JSON.stringify(data);
+                    }
+
+                    async function startSession() {
+                      if (activeSessionId == null) {
+                        statusEl.textContent = 'Create a session first.';
+                        return;
+                      }
+                      const response = await fetch('/api/sessions/' + activeSessionId + '/start', { method: 'POST' });
+                      const data = await response.json();
+                      setActiveSession(data);
+                      reconnectSessionTimeline();
+                      statusEl.textContent = 'Started session: ' + JSON.stringify(data);
+                    }
+
+                    async function stopSession() {
+                      if (activeSessionId == null) {
+                        statusEl.textContent = 'No active session.';
+                        return;
+                      }
+                      const response = await fetch('/api/sessions/' + activeSessionId + '/stop', { method: 'POST' });
+                      const data = await response.json();
+                      setActiveSession(data);
+                      statusEl.textContent = 'Stopped session: ' + JSON.stringify(data);
+                    }
                   </script>
                 </body>
                 </html>
@@ -442,6 +694,26 @@ public class WebUiController {
     @GetMapping(value = "/api/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sse() {
         return stateService.addEmitter();
+    }
+
+    @PostMapping("/api/sessions/create")
+    public ResponseEntity<SessionSummary> createSession(@RequestParam(name = "source", required = false) String source) {
+        return ResponseEntity.ok(sessionService.createSession(source));
+    }
+
+    @PostMapping("/api/sessions/{sessionId}/start")
+    public ResponseEntity<SessionSummary> startSession(@PathVariable("sessionId") long sessionId) {
+        return ResponseEntity.ok(sessionService.startSession(sessionId));
+    }
+
+    @PostMapping("/api/sessions/{sessionId}/stop")
+    public ResponseEntity<SessionSummary> stopSession(@PathVariable("sessionId") long sessionId) {
+        return ResponseEntity.ok(sessionService.stopSession(sessionId));
+    }
+
+    @GetMapping(value = "/api/sessions/{sessionId}/events/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter sessionEvents(@PathVariable("sessionId") long sessionId) {
+        return sessionService.streamSessionEvents(sessionId);
     }
 
     @GetMapping(value = "/api/video.mjpg")

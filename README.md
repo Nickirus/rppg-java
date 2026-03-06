@@ -135,6 +135,11 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - live preview image from `/api/video.mjpg`
 - `GET /api/sse` streams JSON snapshots using Server-Sent Events.
 - `POST /api/control/start|stop|reset` updates in-memory UI state and returns 200.
+- Session orchestration endpoints (Postgres source of truth):
+  - `POST /api/sessions/create` creates a new DB session with status `CREATED`
+  - `POST /api/sessions/{id}/start` sets status to `RUNNING`
+  - `POST /api/sessions/{id}/stop` sets status to `DONE`
+  - `GET /api/sessions/{id}/events/sse` streams appended timeline rows from `session_events`
 - `GET /api/video.mjpg` streams multipart MJPEG (`boundary=frame`) from latest engine frames.
 - `start` launches the reusable `RppgEngine`; SSE then emits real engine snapshots (`bpm/quality/fps/windowFill/warnings`).
 - In web mode, `start` creates a new session CSV with local timestamp:
@@ -145,6 +150,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `sessionFilePath`
   - `sessionDurationSec`
   - `sessionRowCount`
+- The dashboard includes mini timeline charts (BPM + quality) fed by per-session SSE stream.
 - `stop` closes camera/processing thread cleanly; `reset` clears counters and signal window state.
 - `stop` flushes/closes the current session CSV; next `start` creates a new file.
 - JPEG rendering/encoding is performed inside `RppgEngine` and throttled to about `10 fps` by default (`Config.previewJpegFps`).
