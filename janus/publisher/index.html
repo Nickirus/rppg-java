@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Janus VideoRoom Publisher</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      margin: 24px;
+      background: #f7f9fc;
+      color: #1f2937;
+    }
+    .panel {
+      background: #fff;
+      border: 1px solid #dbe3ef;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 12px;
+      max-width: 860px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    input {
+      padding: 6px 8px;
+      border: 1px solid #b8c6dc;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    button {
+      border: 1px solid #315089;
+      background: #3e63a8;
+      color: #fff;
+      border-radius: 8px;
+      padding: 7px 12px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    video {
+      width: 100%;
+      max-width: 860px;
+      border: 1px solid #c8d3e7;
+      border-radius: 8px;
+      background: #0f172a;
+    }
+    #status {
+      font-weight: 700;
+    }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 10px;
+      overflow: auto;
+      min-height: 140px;
+      max-height: 260px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Janus VideoRoom Publisher</h1>
+  <div class="panel">
+    <div class="row">
+      <label for="server">Janus API</label>
+      <input id="server" value="/janus" size="28">
+      <label for="room">Room</label>
+      <input id="room" value="1234" size="8">
+      <label for="display">Display</label>
+      <input id="display" value="local-publisher" size="18">
+    </div>
+    <div class="row">
+      <button id="startBtn">Start publish</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <button id="checkBtn" disabled>List participants</button>
+      <span id="status">Idle</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <video id="localVideo" autoplay playsinline muted></video>
+  </div>
+
+  <div class="panel">
+    <strong>Log</strong>
+    <pre id="log"></pre>
+  </div>
+
+  <script>
+    const state = {
+      sessionId: null,
+      handleId: null,
+      localStream: null,
+      pc: null,
+      pollActive: false,
+      keepaliveTimer: null,
+      pending: new Map()
+    };
+
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const checkBtn = document.getElementById("checkBtn");
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const videoEl = document.getElementById("localVideo");
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function log(msg) {
+      const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logEl.textContent += `${line}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(line);
+    }
+
+    function tx() {
+      return Math.random().toString(36).slice(2, 14);
+    }
+
+    function janusBase() {
+      const val = document.getElementById("server").value.trim();
+      return val.endsWith("/") ? val.slice(0, -1) : val;
+    }
+
+    async function sendJanus(path, payload, timeoutMs = 15000, allowAck = false) {
+      const transaction = tx();
+      const body = { ...payload, transaction };
+      const url = `${janusBase()}${path}`;
+
+      let timeoutId;
+      const wait = new Promise((resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          state.pending.delete(transaction);
+          reject(new Error(`Janus timeout for transaction ${transaction}`));
+        }, timeoutMs);
+        state.pending.set(transaction, { resolve, reject, timeoutId });
+      });
+
+      let immediate;
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        immediate = await resp.json();
+      } catch (error) {
+        const p = state.pending.get(transaction);
+        if (p) {
+          clearTimeout(p.timeoutId);
+          state.pending.delete(transaction);
+        }
+        throw error;
+      }
+
+      if (immediate.janus === "error") {
+        const p = state.pending.get(transaction);
+        if (p) {
+          clearTimeout(p.timeoutId);
+          state.pending.delete(transaction);
+        }
+        throw new Error(`Janus error: ${immediate.error?.code} ${immediate.error?.reason}`);
+      }
+
+      if (immediate.janus === "ack" && allowAck) {
+        const p = state.pending.get(transaction);
+        if (p) {
+          clearTimeout(p.timeoutId);
+          state.pending.delete(transaction);
+          p.resolve(immediate);
+        }
+      } else if (immediate.janus !== "ack") {
+        const p = state.pending.get(transaction);
+        if (p) {
+          clearTimeout(p.timeoutId);
+          state.pending.delete(transaction);
+          p.resolve(immediate);
+        }
+      }
+
+      return wait;
+    }
+
+    function resolvePending(message) {
+      if (!message || !message.transaction) {
+        return false;
+      }
+      const p = state.pending.get(message.transaction);
+      if (!p) {
+        return false;
+      }
+      clearTimeout(p.timeoutId);
+      state.pending.delete(message.transaction);
+      if (message.janus === "error") {
+        p.reject(new Error(`Janus error: ${message.error?.code} ${message.error?.reason}`));
+      } else {
+        p.resolve(message);
+      }
+      return true;
+    }
+
+    async function pollEvents() {
+      state.pollActive = true;
+      while (state.pollActive && state.sessionId) {
+        try {
+          const rid = Date.now();
+          const resp = await fetch(`${janusBase()}/${state.sessionId}?rid=${rid}&maxev=1`);
+          const event = await resp.json();
+          if (Array.isArray(event)) {
+            event.forEach(handleEvent);
+          } else {
+            handleEvent(event);
+          }
+        } catch (error) {
+          log(`Event poll error: ${error.message}`);
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    }
+
+    function handleEvent(event) {
+      if (!event || typeof event !== "object") {
+        return;
+      }
+      if (resolvePending(event)) {
+        return;
+      }
+      if (event.janus === "webrtcup") {
+        setStatus("Publishing (webrtcup)");
+        log("WebRTC is up on Janus side.");
+        return;
+      }
+      if (event.janus === "hangup") {
+        setStatus("Hangup");
+        log(`Hangup: ${event.reason || "unknown"}`);
+        return;
+      }
+      if (event.janus === "media") {
+        log(`Media event: type=${event.type}, receiving=${event.receiving}`);
+        return;
+      }
+      if (event.janus === "slowlink") {
+        log(`Slow link: uplink=${event.uplink}, lost=${event.lost}`);
+        return;
+      }
+      if (event.janus === "event" && event.plugindata?.data) {
+        const data = event.plugindata.data;
+        if (data.videoroom) {
+          log(`VideoRoom event: ${JSON.stringify(data)}`);
+        }
+      }
+    }
+
+    async function keepaliveLoop() {
+      state.keepaliveTimer = setInterval(async () => {
+        if (!state.sessionId) {
+          return;
+        }
+        try {
+          await sendJanus(`/${state.sessionId}`, { janus: "keepalive" }, 8000, true);
+        } catch (error) {
+          log(`Keepalive failed: ${error.message}`);
+        }
+      }, 25000);
+    }
+
+    async function sendPluginMessage(body, jsep = null, allowAck = false) {
+      if (!state.sessionId || !state.handleId) {
+        throw new Error("Plugin handle is not ready");
+      }
+      const payload = { janus: "message", body };
+      if (jsep) {
+        payload.jsep = jsep;
+      }
+      return sendJanus(`/${state.sessionId}/${state.handleId}`, payload, 15000, allowAck);
+    }
+
+    async function setupPeerConnection(localStream) {
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      pc.onconnectionstatechange = () => {
+        log(`Peer connection state: ${pc.connectionState}`);
+      };
+
+      pc.onicecandidate = async (event) => {
+        if (!state.sessionId || !state.handleId) {
+          return;
+        }
+        const candidate = event.candidate
+          ? (event.candidate.toJSON ? event.candidate.toJSON() : event.candidate)
+          : { completed: true };
+        try {
+          await sendJanus(`/${state.sessionId}/${state.handleId}`, {
+            janus: "trickle",
+            candidate
+          }, 8000, true);
+        } catch (error) {
+          log(`Trickle failed: ${error.message}`);
+        }
+      };
+
+      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+      state.pc = pc;
+      return pc;
+    }
+
+    async function startPublishing() {
+      startBtn.disabled = true;
+      setStatus("Starting...");
+      try {
+        const room = Number.parseInt(document.getElementById("room").value, 10);
+        if (!Number.isFinite(room) || room <= 0) {
+          throw new Error("Room must be a positive integer");
+        }
+
+        const display = document.getElementById("display").value.trim() || "local-publisher";
+
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        state.localStream = stream;
+        videoEl.srcObject = stream;
+        log("Local media acquired.");
+
+        const createResp = await sendJanus("", { janus: "create" });
+        state.sessionId = createResp.data.id;
+        log(`Janus session created: ${state.sessionId}`);
+
+        pollEvents();
+        keepaliveLoop();
+
+        const attachResp = await sendJanus(`/${state.sessionId}`, {
+          janus: "attach",
+          plugin: "janus.plugin.videoroom"
+        });
+        state.handleId = attachResp.data.id;
+        log(`Plugin handle attached: ${state.handleId}`);
+
+        try {
+          await sendPluginMessage({
+            request: "create",
+            room,
+            publishers: 6,
+            description: `Room ${room}`,
+            permanent: false
+          });
+          log(`Room ${room} created.`);
+        } catch (error) {
+          log(`Room create skipped: ${error.message}`);
+        }
+
+        await sendPluginMessage({
+          request: "join",
+          ptype: "publisher",
+          room,
+          display
+        });
+        log(`Joined VideoRoom ${room} as publisher (${display}).`);
+
+        const pc = await setupPeerConnection(stream);
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: false,
+          offerToReceiveVideo: false
+        });
+        await pc.setLocalDescription(offer);
+
+        const publishResp = await sendPluginMessage({
+          request: "publish",
+          audio: true,
+          video: true
+        }, offer);
+
+        if (publishResp.jsep) {
+          await pc.setRemoteDescription(publishResp.jsep);
+        }
+        setStatus("Publishing");
+        stopBtn.disabled = false;
+        checkBtn.disabled = false;
+        log("Publish completed.");
+      } catch (error) {
+        setStatus("Failed");
+        log(`Start failed: ${error.message}`);
+        await stopPublishing();
+      }
+    }
+
+    async function listParticipants() {
+      try {
+        const room = Number.parseInt(document.getElementById("room").value, 10);
+        const resp = await sendPluginMessage({ request: "listparticipants", room });
+        const participants = resp.plugindata?.data?.participants || [];
+        log(`Participants in room ${room}: ${participants.length}`);
+        log(JSON.stringify(participants, null, 2));
+      } catch (error) {
+        log(`List participants failed: ${error.message}`);
+      }
+    }
+
+    async function stopPublishing() {
+      stopBtn.disabled = true;
+      checkBtn.disabled = true;
+      state.pollActive = false;
+
+      if (state.keepaliveTimer) {
+        clearInterval(state.keepaliveTimer);
+        state.keepaliveTimer = null;
+      }
+
+      try {
+        if (state.sessionId && state.handleId) {
+          await sendPluginMessage({ request: "unpublish" }, null, true).catch(() => {});
+          await sendPluginMessage({ request: "leave" }, null, true).catch(() => {});
+          await sendJanus(`/${state.sessionId}`, {
+            janus: "detach",
+            handle_id: state.handleId
+          }, 8000, true).catch(() => {});
+        }
+        if (state.sessionId) {
+          await sendJanus(`/${state.sessionId}`, { janus: "destroy" }, 8000, true).catch(() => {});
+        }
+      } catch (error) {
+        log(`Cleanup warning: ${error.message}`);
+      }
+
+      if (state.pc) {
+        state.pc.close();
+        state.pc = null;
+      }
+
+      if (state.localStream) {
+        state.localStream.getTracks().forEach((track) => track.stop());
+        state.localStream = null;
+      }
+      videoEl.srcObject = null;
+
+      for (const entry of state.pending.values()) {
+        clearTimeout(entry.timeoutId);
+      }
+      state.pending.clear();
+
+      state.sessionId = null;
+      state.handleId = null;
+      startBtn.disabled = false;
+      setStatus("Stopped");
+      log("Stopped.");
+    }
+
+    startBtn.addEventListener("click", () => startPublishing());
+    stopBtn.addEventListener("click", () => stopPublishing());
+    checkBtn.addEventListener("click", () => listParticipants());
+  </script>
+</body>
+</html>

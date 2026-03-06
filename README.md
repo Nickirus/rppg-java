@@ -137,6 +137,41 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - If missing, `--camera-check` fails with a clear message and expected path.
 - Place a valid OpenCV Haar cascade XML at that path (for example, from a local OpenCV installation).
 
+## Local Janus VideoRoom Gateway (Docker Compose)
+- Files:
+  - `docker-compose.yml`
+  - `janus/etc/janus.jcfg`
+  - `janus/etc/janus.plugin.videoroom.jcfg`
+  - `janus/publisher/index.html`
+  - `janus/publisher/nginx.conf`
+- Services:
+  - `janus` (Janus Gateway + VideoRoom plugin)
+  - `janus-publisher` (minimal publisher page + reverse proxy to Janus API)
+- Default ports:
+  - Publisher page: `http://localhost:8081`
+  - Janus API: `http://localhost:8088/janus`
+  - Janus WebSockets: `ws://localhost:8188`
+  - RTP/RTCP UDP range: `10000-10100/udp`
+
+Run locally:
+1. Ensure Docker Desktop/Engine is running.
+2. Start stack:
+   - `docker compose up -d`
+3. Open publisher page:
+   - `http://localhost:8081`
+4. Click `Start publish` and allow camera/microphone access.
+5. Verify successful publish:
+   - Page status switches to `Publishing` or `Publishing (webrtcup)`.
+   - Page log contains `WebRTC is up on Janus side.` and `Publish completed.`
+   - Optional: click `List participants` and confirm your publisher appears in room `1234`.
+   - Optional backend check: `docker compose logs -f janus`
+6. Stop stream from UI (`Stop`) or stop stack:
+   - `docker compose down`
+
+Notes:
+- This setup is local-machine oriented (`nat_1_1_mapping = 127.0.0.1` in Janus config).
+- If media does not flow, check local firewall rules for UDP `10000-10100`.
+
 ## Notes
 - No camera access is required for tests.
 - Signal-processing tests use synthetic sine signals.

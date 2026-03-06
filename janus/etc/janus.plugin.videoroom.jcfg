@@ -1,0 +1,12 @@
+general: {
+  lock_rtp_forward = true
+}
+
+room-1234: {
+  description = "Local VideoRoom 1234"
+  publishers = 6
+  bitrate = 1024000
+  fir_freq = 10
+  videocodec = "vp8"
+  audiocodec = "opus"
+}
