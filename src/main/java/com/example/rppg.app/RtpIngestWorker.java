@@ -33,7 +33,7 @@ public final class RtpIngestWorker {
         return runWithCodec(config, config.codec(), false) == RunOutcome.SUCCESS;
     }
 
-    static String buildSdp(RtpIngestConfig config, RtpCodec codec) {
+    public static String buildSdp(RtpIngestConfig config, RtpCodec codec) {
         if (codec == RtpCodec.AUTO) {
             throw new IllegalArgumentException("AUTO codec is not valid for SDP generation");
         }

@@ -42,6 +42,7 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
   - `--run`
   - `--camera-check`
   - `--rtp-ingest`
+  - `--worker`
 
 ## Camera smoke-test (manual)
 - Preferred: `./gradlew bootRun --args="--camera-check"`
@@ -104,7 +105,25 @@ Minimal Java/Gradle skeleton for rPPG signal processing.
 - Typical flow:
   1. Start Janus publisher and `rtp_forward`.
   2. Start this mode on matching local RTP video port.
-  3. Confirm logs show increasing `frames=` and stable `fps=`.
+ 3. Confirm logs show increasing `frames=` and stable `fps=`.
+
+## Multi-session worker mode (RTP -> gRPC ingest)
+- Purpose: run several RTP decode sessions concurrently and stream timeline events to API gRPC ingest.
+- Preferred:
+  - `./gradlew bootRun --args="--worker --worker-api-host=127.0.0.1 --worker-api-port=9090 --worker-session=101:5004 --worker-session=102:5006 --worker-codec=auto --worker-fps=30 --worker-target-fps=10 --worker-emit-interval-ms=1000"`
+- Also works:
+  - `./gradlew run --args="--worker --worker-session=101:5004"`
+- Session spec format:
+  - `--worker-session=<sessionId>:<videoPort>[:<audioPort>]`
+- Worker behavior per session:
+  - RTP ingest + decode loop
+  - bounded in-memory queue with drop-oldest strategy under backpressure
+  - processing cadence throttled by `--worker-target-fps`
+  - timeline event sent to gRPC stream every `--worker-emit-interval-ms` (typical 1000-2000ms)
+- Useful args:
+  - `--worker-width`, `--worker-height`, `--worker-fps`, `--worker-codec`
+  - `--worker-queue-capacity`
+  - `--worker-status-log-interval-ms`
 
 ## Web UI mode (manual)
 - Preferred: `./gradlew bootRun --args="--web"`
